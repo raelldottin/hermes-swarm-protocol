@@ -36,14 +36,35 @@ memory        = evidence, never sole verification authority
 
 ## Install
 
-The plugin lives at `~/.hermes/plugins/swarm-protocol` (symlink to
-`hermes_swarm_protocol/` in the canonical checkout):
+Clone the repository wherever you keep source checkouts. The plugin path is derived from
+the checkout itself; no specific directory such as `~/Documents/Personal` is required.
 
 ```bash
-ln -s ~/Documents/Personal/hermes-swarm-protocol/hermes_swarm_protocol ~/.hermes/plugins/swarm-protocol
-# then per profile:
-#   plugins.enabled: [swarm-protocol, ...]   (or: hermes plugins enable swarm-protocol)
+git clone https://github.com/raelldottin/hermes-swarm-protocol.git
+cd hermes-swarm-protocol
+
+PLUGIN_SRC="$(pwd)/hermes_swarm_protocol"
+
+mkdir -p "$HOME/.hermes/plugins"
+ln -sfn "$PLUGIN_SRC" "$HOME/.hermes/plugins/swarm-protocol"
+
+hermes plugins enable swarm-protocol
 ```
+
+If you use named Hermes profiles, make the same plugin available inside each profile
+and enable it there:
+
+```bash
+PROFILE="<profile-name>"
+
+mkdir -p "$HOME/.hermes/profiles/$PROFILE/plugins"
+ln -sfn "$PLUGIN_SRC" "$HOME/.hermes/profiles/$PROFILE/plugins/swarm-protocol"
+
+hermes -p "$PROFILE" plugins enable swarm-protocol
+```
+
+Repeat the profile block for each worker or orchestrator profile that should expose the
+`swarm` toolset.
 
 Routing config (per profile):
 ```yaml
@@ -77,4 +98,4 @@ docs/recovery.md  fleet policy + recovery runbook (canonical)
 ```
 
 See `docs/recovery.md` for the canonical fleet memory policy and the recovery rules
- distilled from the 2026-09-28 config incident.
+distilled from the 2026-09-28 config incident.
