@@ -1,0 +1,8 @@
+name: swarm-protocol
+version: 1.0.0
+description: "Swarm coordination semantics over Hermes Kanban + ByteRover: swarm_request (create linked work), swarm_verify (two-stage independent verification with memory/live evidence separation), swarm_route (deterministic config-driven routing). No new storage — Kanban cards and comments are the durable state."
+author: fleet
+provides_tools:
+  - swarm_request
+  - swarm_verify
+  - swarm_route
