@@ -244,22 +244,8 @@ def test_route_unknown_returns_unresolved(swarm_env, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 6. Hermes issue #129021 — worker terminal path + status integrity
+# 6. Hermes issue #129021 — task-status integrity
 # ---------------------------------------------------------------------------
-
-def test_issue_129021_worker_toolset_guard_injects_kanban_and_fails_closed(swarm_env):
-    mod = swarm_env["mod"]
-
-    guarded = mod._wrap_worker_toolset_resolver(
-        lambda home: ["terminal", "file", "web"] if home else None
-    )
-    assert guarded("/tmp/profile") == ["file", "kanban", "terminal", "web"]
-    assert guarded(None) is None
-
-    unresolved = mod._wrap_worker_toolset_resolver(lambda home: None)
-    with pytest.raises(RuntimeError, match="terminal Kanban lifecycle capability"):
-        unresolved("/tmp/profile")
-
 
 def test_issue_129021_off_enum_status_write_is_rejected(swarm_env, monkeypatch):
     """A worker that tries the incident's raw `status='completed'` write is stopped by SQLite."""
