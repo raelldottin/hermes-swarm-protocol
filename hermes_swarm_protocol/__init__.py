@@ -18,7 +18,6 @@ Storage: none. Requests are Kanban cards; verification outcomes are comments + r
 
 from __future__ import annotations
 
-import functools
 import hashlib
 import json
 import logging
@@ -95,65 +94,17 @@ def _plugin_settings() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Hermes Kanban worker safety compatibility (#129021)
+# Hermes Kanban task-status integrity (#129021 follow-up)
 # ---------------------------------------------------------------------------
 
-# Hermes 0.21.5 can pin a dispatcher-spawned worker to an assignee profile's
-# explicit CLI toolsets without the `kanban` toolset. The same worker is not
-# allowed to mutate its task through `hermes kanban ...`, leaving it with no
-# sanctioned terminal transition path. Hermes main now injects task-scoped
-# lifecycle tools during schema assembly; this shim keeps older installations
-# safe and is harmless on newer versions because the tool registry deduplicates
-# the selected tool names and worker visibility gates still hide orchestrator
-# mutations.
-_ISSUE_129021_PATCH_ATTR = "_hermes_swarm_issue_129021"
+# Current Hermes releases already inject task-scoped Kanban lifecycle tools for
+# dispatcher-owned workers. This plugin therefore does not patch worker toolset
+# selection. It keeps only the independent defense-in-depth requested in #129021:
+# make off-enum tasks.status writes fail at the SQLite boundary.
 _STATUS_GUARD_TRIGGERS = (
     "hermes_swarm_tasks_status_insert_guard",
     "hermes_swarm_tasks_status_update_guard",
 )
-
-
-def _wrap_worker_toolset_resolver(resolve):
-    """Return a resolver that guarantees dispatcher workers include Kanban.
-
-    A profile-scoped resolution failure is fail-closed: spawning a worker with
-    an unknown capability set recreates the exact unsafe state this guard is
-    meant to prevent.
-    """
-    @functools.wraps(resolve)
-    def guarded(hermes_home):
-        resolved = resolve(hermes_home)
-        if not hermes_home:
-            return resolved
-        if not resolved:
-            raise RuntimeError(
-                "swarm-protocol #129021: refused to spawn a Kanban worker because "
-                "its profile CLI toolsets could not be resolved; terminal Kanban "
-                "lifecycle capability cannot be guaranteed"
-            )
-        return sorted(set(resolved) | {"kanban"})
-
-    setattr(guarded, _ISSUE_129021_PATCH_ATTR, True)
-    setattr(guarded, "_hermes_swarm_original_resolver", resolve)
-    return guarded
-
-
-def _install_dispatcher_terminal_tool_guard() -> bool:
-    """Patch the dispatcher resolver once so every spawned worker gets Kanban."""
-    try:
-        from hermes_cli import kanban_db_dispatch as dispatch
-    except Exception:
-        return False
-
-    current = getattr(dispatch, "_resolve_worker_cli_toolsets", None)
-    if not callable(current):
-        return False
-    if getattr(current, _ISSUE_129021_PATCH_ATTR, False):
-        return True
-
-    dispatch._resolve_worker_cli_toolsets = _wrap_worker_toolset_resolver(current)
-    logger.info("swarm-protocol installed Hermes #129021 worker-toolset guard")
-    return True
 
 
 def _sql_string(value: str) -> str:
@@ -499,11 +450,9 @@ def swarm_route(args: dict, **kwargs) -> str:
 # ---------------------------------------------------------------------------
 
 def register(ctx) -> None:
-    # Compatibility/safety guards run regardless of whether the model-facing
-    # `swarm` toolset is selected. The dispatcher process receives the 0.21.5
-    # terminal-tool shim; a dispatcher-owned worker additionally persists the
-    # board-level status constraint before model work begins.
-    _install_dispatcher_terminal_tool_guard()
+    # Defense-in-depth guard: current Hermes already injects dispatcher worker
+    # lifecycle tools. A dispatcher-owned worker persists the board-level status
+    # constraint before model work begins.
     _install_task_status_guard()
 
     ctx.register_tool(name="swarm_request", toolset="swarm", schema=SWARM_REQUEST_SCHEMA, handler=swarm_request)
