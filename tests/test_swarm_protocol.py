@@ -258,9 +258,10 @@ def test_issue_129021_off_enum_status_write_is_rejected(swarm_env, monkeypatch):
 
     conn = kbc.connect()
     try:
+        status_before = kb.get_task(conn, source_tid).status
         with pytest.raises(sqlite3.IntegrityError, match="invalid tasks.status"):
             conn.execute("UPDATE tasks SET status='completed' WHERE id=?", (source_tid,))
-        assert kb.get_task(conn, source_tid).status == "running"
+        assert kb.get_task(conn, source_tid).status == status_before
     finally:
         conn.close()
 
