@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -28,6 +29,7 @@ from typing import Any, Dict, List, Optional
 from tools.registry import tool_error
 
 PROTOCOL = "hermes-swarm/v1"
+logger = logging.getLogger(__name__)
 
 # ByteRover outcome normalization (Phase 4 of the design): four explicit states so a
 # timeout is never collapsed into "memory says no".
@@ -89,6 +91,99 @@ def _plugin_settings() -> Dict[str, Any]:
         return dict((entry or {}).get("settings") or {})
     except Exception:
         return {}
+
+
+# ---------------------------------------------------------------------------
+# Hermes Kanban task-status integrity (#129021 follow-up)
+# ---------------------------------------------------------------------------
+
+# Current Hermes releases already inject task-scoped Kanban lifecycle tools for
+# dispatcher-owned workers. This plugin therefore does not patch worker toolset
+# selection. It keeps only the independent defense-in-depth requested in #129021:
+# make off-enum tasks.status writes fail at the SQLite boundary.
+_STATUS_GUARD_TRIGGERS = (
+    "hermes_swarm_tasks_status_insert_guard",
+    "hermes_swarm_tasks_status_update_guard",
+)
+
+
+def _sql_string(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def _install_task_status_guard() -> bool:
+    """Persist SQLite triggers that reject off-enum `tasks.status` writes.
+
+    The trigger lives in the board database, so it also applies to accidental
+    raw sqlite3 writes performed after plugin initialization. Existing invalid
+    rows are reported but not guessed at or silently rewritten.
+    """
+    if not os.environ.get("HERMES_KANBAN_TASK"):
+        return False
+
+    try:
+        from hermes_cli import kanban_db as kb
+        from hermes_cli import kanban_db_connect as kbc
+
+        valid = sorted(str(s) for s in kb.VALID_STATUSES)
+        allowed_sql = ", ".join(_sql_string(s) for s in valid)
+        placeholders = ", ".join("?" for _ in valid)
+
+        conn = kbc.connect()
+        try:
+            invalid = conn.execute(
+                f"SELECT id, status FROM tasks "
+                f"WHERE status IS NULL OR status NOT IN ({placeholders}) "
+                f"ORDER BY id",
+                valid,
+            ).fetchall()
+
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                for trigger in _STATUS_GUARD_TRIGGERS:
+                    conn.execute(f'DROP TRIGGER IF EXISTS "{trigger}"')
+                conn.execute(
+                    f"""
+                    CREATE TRIGGER "{_STATUS_GUARD_TRIGGERS[0]}"
+                    BEFORE INSERT ON tasks
+                    FOR EACH ROW
+                    WHEN NEW.status IS NULL OR NEW.status NOT IN ({allowed_sql})
+                    BEGIN
+                        SELECT RAISE(ABORT, 'hermes-swarm-protocol: invalid tasks.status');
+                    END
+                    """
+                )
+                conn.execute(
+                    f"""
+                    CREATE TRIGGER "{_STATUS_GUARD_TRIGGERS[1]}"
+                    BEFORE UPDATE OF status ON tasks
+                    FOR EACH ROW
+                    WHEN NEW.status IS NULL OR NEW.status NOT IN ({allowed_sql})
+                    BEGIN
+                        SELECT RAISE(ABORT, 'hermes-swarm-protocol: invalid tasks.status');
+                    END
+                    """
+                )
+                conn.execute("COMMIT")
+            except Exception:
+                conn.execute("ROLLBACK")
+                raise
+
+            if invalid:
+                preview = ", ".join(f"{task_id}={status!r}" for task_id, status in invalid[:10])
+                logger.error(
+                    "swarm-protocol found pre-existing invalid Kanban task statuses: %s%s. "
+                    "Future off-enum writes are blocked; repair these rows before relying on "
+                    "dependency promotion.",
+                    preview,
+                    " ..." if len(invalid) > 10 else "",
+                )
+            return True
+        finally:
+            conn.close()
+    except Exception:
+        logger.exception("swarm-protocol could not install the Kanban task-status guard")
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -355,6 +450,11 @@ def swarm_route(args: dict, **kwargs) -> str:
 # ---------------------------------------------------------------------------
 
 def register(ctx) -> None:
+    # Defense-in-depth guard: current Hermes already injects dispatcher worker
+    # lifecycle tools. A dispatcher-owned worker persists the board-level status
+    # constraint before model work begins.
+    _install_task_status_guard()
+
     ctx.register_tool(name="swarm_request", toolset="swarm", schema=SWARM_REQUEST_SCHEMA, handler=swarm_request)
     ctx.register_tool(name="swarm_verify", toolset="swarm", schema=SWARM_VERIFY_SCHEMA, handler=swarm_verify)
     ctx.register_tool(name="swarm_route", toolset="swarm", schema=SWARM_ROUTE_SCHEMA, handler=swarm_route)

@@ -27,6 +27,13 @@ memory        = evidence, never sole verification authority
   - `swarm_route` — deterministic config-driven routing (`plugins.entries.swarm-protocol
     .settings.projects.<project>.<role>`); unknown project/role → `ROUTE_UNRESOLVED`,
     never a guess.
+- **Hermes #129021 status-integrity guard** — worker boards receive persistent SQLite triggers
+  that reject off-enum task statuses before a raw write can corrupt dependency gating. Current
+  Hermes already injects dispatcher-worker lifecycle tools; this repository does not override
+  that upstream behavior. See `docs/kanban-worker-safety.md`.
+- **`ops/repair_kanban_status.py`** — audit-first recovery for boards already containing the
+  incident's `status='completed'`; `--apply` backs up the DB and repairs only rows with matching
+  completion evidence.
 - **`ops/migrate_fleet_memory.py`** — fleet memory migration/audit tool: maps worker
   profiles to shared per-project ByteRover trees (`memory.byterover.workdir`), roots are
   read-mostly (`auto_extract: false`), with backup/audit/recovery invariants.
@@ -64,7 +71,8 @@ hermes -p "$PROFILE" plugins enable swarm-protocol
 ```
 
 Repeat the profile block for each worker or orchestrator profile that should expose the
-`swarm` toolset.
+`swarm` toolset. Worker profiles that should install the status-integrity guard must have the
+plugin enabled so the board trigger is created before model work begins.
 
 Routing config (per profile):
 ```yaml
@@ -92,10 +100,12 @@ Kanban paths (needs the Hermes source tree importable); set
 
 ```text
 hermes_swarm_protocol/   plugin (plugin.yaml + __init__.py) — the loadable unit
-ops/              fleet migration/audit tooling
+ops/              fleet migration/audit tooling + guarded Kanban status repair
 tests/            plugin tests + migration regression tests
 docs/recovery.md  fleet policy + recovery runbook (canonical)
+docs/kanban-worker-safety.md  Hermes #129021 compatibility + repair runbook
 ```
 
+See `docs/kanban-worker-safety.md` for the worker terminal-path/status-integrity guard.
 See `docs/recovery.md` for the canonical fleet memory policy and the recovery rules
 distilled from the 2026-09-28 config incident.

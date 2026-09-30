@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -240,3 +241,57 @@ def test_route_unknown_returns_unresolved(swarm_env, monkeypatch):
     assert d["route"] == "ROUTE_UNRESOLVED"
     d2 = json.loads(mod.swarm_route({"project": "no-such-project", "work_type": "builder"}))
     assert d2["route"] == "ROUTE_UNRESOLVED"
+
+
+# ---------------------------------------------------------------------------
+# 6. Hermes issue #129021 — task-status integrity
+# ---------------------------------------------------------------------------
+
+def test_issue_129021_off_enum_status_write_is_rejected(swarm_env, monkeypatch):
+    """A worker that tries the incident's raw `status='completed'` write is stopped by SQLite."""
+    mod, source_tid = swarm_env["mod"], swarm_env["source_tid"]
+    monkeypatch.setenv("HERMES_KANBAN_TASK", source_tid)
+    assert mod._install_task_status_guard() is True
+
+    from hermes_cli import kanban_db as kb
+    from hermes_cli import kanban_db_connect as kbc
+
+    conn = kbc.connect()
+    try:
+        status_before = kb.get_task(conn, source_tid).status
+        with pytest.raises(sqlite3.IntegrityError, match="invalid tasks.status"):
+            conn.execute("UPDATE tasks SET status='completed' WHERE id=?", (source_tid,))
+        assert kb.get_task(conn, source_tid).status == status_before
+    finally:
+        conn.close()
+
+
+def test_issue_129021_canonical_completion_releases_dependent_child(swarm_env, monkeypatch):
+    """The sanctioned completion path persists `done` and promotes a gated child."""
+    mod, source_tid = swarm_env["mod"], swarm_env["source_tid"]
+    monkeypatch.setenv("HERMES_KANBAN_TASK", source_tid)
+    assert mod._install_task_status_guard() is True
+
+    from hermes_cli import kanban_db as kb
+    from hermes_cli import kanban_db_connect as kbc
+
+    conn = kbc.connect()
+    try:
+        child_tid = kb.create_task(
+            conn,
+            title="dependent child",
+            assignee="opnory-verifier",
+            parents=[source_tid],
+        )
+        assert kb.get_task(conn, child_tid).status == "todo"
+
+        assert kb.complete_task(
+            conn,
+            source_tid,
+            summary="finished through the canonical Kanban completion path",
+            force=True,
+        )
+        assert kb.get_task(conn, source_tid).status == "done"
+        assert kb.get_task(conn, child_tid).status == "ready"
+    finally:
+        conn.close()
