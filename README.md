@@ -27,10 +27,10 @@ memory        = evidence, never sole verification authority
   - `swarm_route` — deterministic config-driven routing (`plugins.entries.swarm-protocol
     .settings.projects.<project>.<role>`); unknown project/role → `ROUTE_UNRESOLVED`,
     never a guess.
-- **Hermes #129021 safety guard** — dispatcher workers are guaranteed the `kanban`
-  lifecycle toolset even when their profile omits it, and worker boards receive persistent
-  SQLite triggers that reject off-enum task statuses before a raw write can corrupt dependency
-  gating. See `docs/kanban-worker-safety.md`.
+- **Hermes #129021 status-integrity guard** — worker boards receive persistent SQLite triggers
+  that reject off-enum task statuses before a raw write can corrupt dependency gating. Current
+  Hermes already injects dispatcher-worker lifecycle tools; this repository does not override
+  that upstream behavior. See `docs/kanban-worker-safety.md`.
 - **`ops/repair_kanban_status.py`** — audit-first recovery for boards already containing the
   incident's `status='completed'`; `--apply` backs up the DB and repairs only rows with matching
   completion evidence.
@@ -71,8 +71,8 @@ hermes -p "$PROFILE" plugins enable swarm-protocol
 ```
 
 Repeat the profile block for each worker or orchestrator profile that should expose the
-`swarm` toolset. Keep the plugin enabled in the profile/process that owns the dispatcher as
-well: the Hermes 0.21.5 compatibility guard is installed there before workers are spawned.
+`swarm` toolset. Worker profiles that should install the status-integrity guard must have the
+plugin enabled so the board trigger is created before model work begins.
 
 Routing config (per profile):
 ```yaml
