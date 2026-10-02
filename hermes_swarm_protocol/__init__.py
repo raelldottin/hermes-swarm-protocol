@@ -46,7 +46,7 @@ VERDICTS = ("pass", "fail", "inconclusive", "blocked")
 # deliberately monotonic: a future Hermes release with a larger timeout wins.
 _DEFAULT_BRV_CURATE_TIMEOUT_SECONDS = 660
 _MIN_BRV_CURATE_TIMEOUT_SECONDS = 120
-_MAX_BRV_CURATE_TIMEOUT_SECONDS = 3600
+_MAX_BRV_CURATE_TIMEOUT_SECONDS = 7200
 
 # In-process receipts for two-stage verification: verification_id -> {request_id, issued_at,
 # memory_status, digest}. Short-lived by construction (process-scoped); the durable record is
