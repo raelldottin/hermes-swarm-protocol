@@ -90,6 +90,33 @@ python3 ops/migrate_fleet_memory.py --json
    profile, correct workdir, correct `auto_extract` policy per role, model config
    intact, plugins enabled, routing present.
 
+## ByteRover curate timeout compatibility
+
+Hermes' bundled ByteRover provider currently uses a 120-second process timeout for every
+curate. ByteRover itself defaults to a 600-second agentic task budget, so Hermes can kill a
+healthy curate long before ByteRover reaches its own deadline. When the active provider is
+ByteRover, swarm-protocol raises the Hermes module-level curate timeout to a 660-second floor.
+
+The patch is intentionally monotonic: if a future Hermes release already uses a larger value,
+swarm-protocol leaves it unchanged. The same provider method backs explicit `brv_curate`,
+turn auto-extraction, memory mirroring, and pre-compression curation, so the floor applies to
+all of those paths. It does not alter ByteRover storage, shared-tree ownership, or the
+`swarm_verify` rule that memory is evidence rather than verification authority.
+
+Override the floor per profile when ByteRover's own iteration budget is larger:
+
+```yaml
+plugins:
+  entries:
+    swarm-protocol:
+      settings:
+        byterover_curate_timeout_seconds: 1260  # e.g. 20m ByteRover budget + 60s
+```
+
+Keep the Hermes floor at least `llm.iterationBudgetMs / 1000 + 60`. Accepted values are
+120–7200 seconds. In a multiplexed gateway the effective module timeout is process-wide and
+monotonic, so a profile may raise the floor but cannot shorten a sibling profile's deadline.
+
 ## Known operational facts
 
 - The four shared trees: `~/.hermes/byterover-projects/{opnory,alepes,tachikoma,tunory}`.
