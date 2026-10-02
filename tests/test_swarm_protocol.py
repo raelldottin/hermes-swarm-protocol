@@ -2,12 +2,15 @@
 
 Covers the design contract from the implementation doc:
   1. Real plugin discovery registers all three tools.
-  2. swarm_request creates a linked Kanban card + source comment; identity comes from the
+  2. ByteRover curate timeout compatibility raises the Hermes floor without lowering
+     a larger upstream value.
+  3. swarm_request creates a linked Kanban card + source comment; identity comes from the
      profile, never args.
-  3. swarm_verify inspect normalizes ByteRover outcomes into MEMORY_* states.
-  4. swarm_verify commit: pass without live evidence is REFUSED (memory is evidence,
+  4. swarm_verify inspect normalizes ByteRover outcomes into MEMORY_* states.
+  5. swarm_verify commit: pass without live evidence is REFUSED (memory is evidence,
      not authority); a memory timeout never masquerades as a fail/inconclusive ground truth.
-  5. swarm_route: deterministic config lookup; unknown -> ROUTE_UNRESOLVED.
+  6. swarm_route: deterministic config lookup; unknown -> ROUTE_UNRESOLVED.
+  7. the Kanban status guard rejects off-enum task statuses.
 """
 from __future__ import annotations
 
