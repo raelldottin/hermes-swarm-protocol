@@ -81,7 +81,75 @@ def test_real_discovery_registers_swarm_tools(monkeypatch, tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# 2. swarm_request
+# 2. ByteRover curate timeout compatibility
+# ---------------------------------------------------------------------------
+
+def test_byterover_curate_timeout_patch_reaches_explicit_curate(swarm_env, monkeypatch, tmp_path):
+    """The swarm patch must raise the timeout actually consumed by brv_curate."""
+    mod = swarm_env["mod"]
+    from plugins.memory import byterover as brv
+
+    monkeypatch.setattr(mod, "_active_memory_provider", lambda: "byterover")
+    monkeypatch.setattr(
+        mod,
+        "_plugin_settings",
+        lambda: {"byterover_curate_timeout_seconds": 660},
+    )
+    monkeypatch.setattr(brv, "_CURATE_TIMEOUT", 120)
+
+    seen = {}
+
+    def fake_run(args, timeout=0, cwd=None):
+        seen["args"] = args
+        seen["timeout"] = timeout
+        seen["cwd"] = cwd
+        return {"success": True, "output": "ok"}
+
+    monkeypatch.setattr(brv, "_run_brv", fake_run)
+
+    assert mod._patch_byterover_curate_timeout() is True
+    assert brv._CURATE_TIMEOUT == 660
+
+    provider = brv.ByteRoverMemoryProvider({"auto_extract": False})
+    provider._cwd = str(tmp_path)
+    result = provider._curate("remember this decision")
+
+    assert result["success"] is True
+    assert seen["args"] == ["curate", "--", "remember this decision"]
+    assert seen["timeout"] == 660
+
+
+def test_byterover_curate_timeout_patch_never_lowers_upstream(swarm_env, monkeypatch):
+    """A future Hermes timeout above our floor remains authoritative."""
+    mod = swarm_env["mod"]
+    from plugins.memory import byterover as brv
+
+    monkeypatch.setattr(mod, "_active_memory_provider", lambda: "byterover")
+    monkeypatch.setattr(
+        mod,
+        "_plugin_settings",
+        lambda: {"byterover_curate_timeout_seconds": 660},
+    )
+    monkeypatch.setattr(brv, "_CURATE_TIMEOUT", 900)
+
+    assert mod._patch_byterover_curate_timeout() is True
+    assert brv._CURATE_TIMEOUT == 900
+
+
+def test_byterover_curate_timeout_patch_is_inactive_for_other_provider(swarm_env, monkeypatch):
+    """The compatibility patch is scoped to profiles that actually use ByteRover."""
+    mod = swarm_env["mod"]
+    from plugins.memory import byterover as brv
+
+    monkeypatch.setattr(mod, "_active_memory_provider", lambda: "holographic")
+    monkeypatch.setattr(brv, "_CURATE_TIMEOUT", 120)
+
+    assert mod._patch_byterover_curate_timeout() is False
+    assert brv._CURATE_TIMEOUT == 120
+
+
+# ---------------------------------------------------------------------------
+# 3. swarm_request
 # ---------------------------------------------------------------------------
 
 def test_request_creates_linked_card_and_source_comment(swarm_env):
@@ -137,7 +205,7 @@ def test_request_identity_never_taken_from_args(swarm_env):
 
 
 # ---------------------------------------------------------------------------
-# 3. swarm_verify inspect — MEMORY_* normalization
+# 4. swarm_verify inspect — MEMORY_* normalization
 # ---------------------------------------------------------------------------
 
 def test_inspect_normalizes_timeout_to_memory_timeout(swarm_env, monkeypatch):
@@ -163,7 +231,7 @@ def test_inspect_normalizes_empty_to_memory_empty(swarm_env, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 4. swarm_verify commit — the core invariant
+# 5. swarm_verify commit — the core invariant
 # ---------------------------------------------------------------------------
 
 def test_commit_pass_without_live_evidence_is_refused(swarm_env):
@@ -222,7 +290,7 @@ def test_commit_without_task_id_is_refused(swarm_env):
 
 
 # ---------------------------------------------------------------------------
-# 5. swarm_route — deterministic routing
+# 6. swarm_route — deterministic routing
 # ---------------------------------------------------------------------------
 
 def test_route_resolves_from_config(swarm_env, monkeypatch):
@@ -244,7 +312,7 @@ def test_route_unknown_returns_unresolved(swarm_env, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# 6. Hermes issue #129021 — task-status integrity
+# 7. Hermes issue #129021 — task-status integrity
 # ---------------------------------------------------------------------------
 
 def test_issue_129021_off_enum_status_write_is_rejected(swarm_env, monkeypatch):
