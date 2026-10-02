@@ -27,6 +27,10 @@ memory        = evidence, never sole verification authority
   - `swarm_route` — deterministic config-driven routing (`plugins.entries.swarm-protocol
     .settings.projects.<project>.<role>`); unknown project/role → `ROUTE_UNRESOLVED`,
     never a guess.
+- **ByteRover curate timeout compatibility** — when ByteRover is active, raises Hermes'
+  hard-coded curate timeout floor from 120 seconds to 660 seconds by default, without lowering
+  a larger future upstream value. This covers explicit `brv_curate` and ByteRover's automatic
+  curation paths while leaving the shared project trees unchanged.
 - **Hermes #129021 status-integrity guard** — worker boards receive persistent SQLite triggers
   that reject off-enum task statuses before a raw write can corrupt dependency gating. Current
   Hermes already injects dispatcher-worker lifecycle tools; this repository does not override
@@ -85,6 +89,19 @@ plugins:
             verification: opnory-verifier
             builder: opnory-builder
 ```
+
+ByteRover curate timeout (optional; default is 660 seconds):
+```yaml
+plugins:
+  entries:
+    swarm-protocol:
+      settings:
+        byterover_curate_timeout_seconds: 660
+```
+
+Set the floor to at least ByteRover's `llm.iterationBudgetMs / 1000 + 60` when you
+increase ByteRover's task budget. The compatibility patch clamps values to 120–7200
+seconds and only ever raises Hermes' current timeout; it never lowers an upstream value.
 
 ## Test
 
