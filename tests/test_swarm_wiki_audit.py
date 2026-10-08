@@ -7,6 +7,62 @@ from test_swarm_wiki import project, add, build, classes
 from test_swarm_wiki_plugin import wiki_env, publish
 from test_swarm_protocol import swarm_env
 import wiki_records as records
+import wiki_compiler as wiki
+
+def test_delayed_indexes_reopen_eight_findings_and_reviewed_corrections_restore_check(project):
+    root = node_subject(project, "_index.md")
+    original = records.capture(project["workspace"], "_index.md", "source-snapshots", source_root=project["tree"])
+    original_bytes = (project["tree"] / "_index.md").read_bytes()
+    adopted = annotation(project, root, "adoption")
+    linked = annotation(project, root, "work_link", time=21, source_task_ids=["t1"])
+    p, files, inputs = build(project)
+    assert not p.unresolved_findings
+    assert wiki.publish(project["out"], files, inputs, project["workspace"], False)
+    assert wiki.publish(project["out"], files, inputs, project["workspace"], True)
+
+    paths = ["_index.md", "curated_content/_index.md", "curated_content/general/_index.md"]
+    for path in paths:
+        file = project["tree"] / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("Delayed generated index: historical project context")
+    p, files, inputs = build(project)
+    assert len(p.unresolved_findings) == 8
+    assert not wiki.publish(project["out"], files, inputs, project["workspace"], True)
+
+    for i, path in enumerate(paths):
+        subject = {"kind":"knowledge", "path":path,
+                   "sha256":records.byte_hash((project["tree"]/path).read_bytes())}
+        annotation(project, subject, "adoption", time=30+i*2,
+                   **({"supersedes":adopted["event_id"]} if i==0 else {}))
+        annotation(project, subject, "work_link", time=31+i*2, source_task_ids=["t1"],
+                   **({"supersedes":linked["event_id"]} if i==0 else {}))
+    p, files, inputs = build(project)
+    assert not p.unresolved_findings
+    assert len(p.findings) == 8
+    assert sum(f["outcome"]=="superseded_history" for f in p.findings) == 2
+    assert sum(f["outcome"]=="adopted_current_revision" for f in p.findings) == 3
+    assert sum(f["outcome"]=="linked" for f in p.findings) == 3
+    assert wiki.publish(project["out"], files, inputs, project["workspace"], False)
+    assert wiki.publish(project["out"], files, inputs, project["workspace"], True)
+    assert (project["raw"]/original["path"]).read_bytes() == original_bytes
+    assert adopted["event_id"] in p.events and linked["event_id"] in p.events
+
+def test_repeated_index_revisions_retire_stale_annotation_chains(project):
+    prior = {}
+    for generation in range(3):
+        (project["tree"]/"_index.md").write_text("Reviewed generation " + str(generation))
+        subject = {"kind":"knowledge", "path":"_index.md",
+                   "sha256":records.byte_hash((project["tree"]/"_index.md").read_bytes())}
+        for offset,relation in enumerate(["adoption", "work_link"]):
+            fields = {"source_task_ids":["t1"]} if relation=="work_link" else {}
+            if relation in prior: fields["supersedes"] = prior[relation]["event_id"]
+            prior[relation] = annotation(project, subject, relation, time=20+generation*2+offset, **fields)
+    p, _, _ = build(project)
+    assert not p.unresolved_findings
+    history = [f for f in p.findings if f["class"]=="invalid-audit-record"]
+    assert len(history)==4
+    assert all(f["outcome"]=="superseded_history" for f in history)
+    assert {f["correction_event_id"] for f in history} == {e["event_id"] for e in prior.values()}
 
 def task_subject(project, actor=None):
     with sqlite3.connect(project["db"]) as conn:
