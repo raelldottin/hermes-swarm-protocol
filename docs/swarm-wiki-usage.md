@@ -7,6 +7,17 @@ curated prose remains ByteRover knowledge.
 
 ## Project setup
 
+Delayed ByteRover indexing is a maintenance step after curation. A successful
+curator response and a successful first check do not establish that later
+index writes are complete. Pin the whole knowledge inventory, review each
+changed/new `_index.md`, capture its bytes and publish maintainer adoption
+and work links. Supersede the original exact-hash annotations for replaced
+revisions; keep predecessor IDs fixed on retries. Do not re-curate merely to
+repair metadata. Rebuild, check and repeat preflight before deployment.
+
+See the applied [delayed-index reconciliation](swarm-wiki-index-reconciliation.md)
+for the eight-finding regression and retained history outcomes.
+
 The native Hermes manifest must declare `kind: standalone`; this plugin is
 an add-on, not an exclusive memory provider. A Plugin Doctor result alone
 does not establish that normal sessions register the five tools.

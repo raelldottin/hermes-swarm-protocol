@@ -4,6 +4,14 @@ Status: **implemented, QA validated and applied through canonical publications**
 
 ## Applied results
 
+The subsequent delayed-index preflight reopened eight findings. Its reviewed
+maintenance run has closed that snapshot with six exact-revision corrections,
+including explicit successors for changed root annotations. The current
+recorded generation has 55 retained outcomes and zero unresolved findings.
+See [delayed-index research and iteration QA](swarm-wiki-index-reconciliation.md).
+Baseline hashes remain historical; the finding register records newly reviewed
+root bytes separately and retains the superseded correction IDs.
+
 All original 39 findings now have exact-source canonical outcomes: 11 adopted
 knowledge revisions, 11 explicit work links, two independently verified
 request gaps, and 15 disclosed historical actor gaps. The original actors

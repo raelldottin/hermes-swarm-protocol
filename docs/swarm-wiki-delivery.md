@@ -5,6 +5,26 @@ remediation, deployment and iteration QA are applied. The generated wiki is
 an untrusted projection; Kanban, ByteRover and original evidence retain their
 own authority. All original findings remain visible with canonical outcomes.
 
+## Latest source preflight after delayed indexing
+
+The initial generation below was later invalidated by asynchronous ByteRover
+index writes. Maintenance task `t_72e2b34b` reviewed and captured all three
+affected indexes, published six canonical corrections and retained the two
+old root annotations as superseded history. All eight reopened findings have
+outcomes. Repeating the reviewed plan returned only duplicate receipts.
+
+Current recorded acceptance: 94 passing tests; 55 retained outcomes and zero
+unresolved findings; 129 generated files with byte-identical independent
+rebuild and matching manifest hashes; 1,244 valid local links and no broken
+targets. Existing board rows and knowledge bytes were unchanged by maintenance
+and compilation. See [research, plan, design and iteration QA](swarm-wiki-index-reconciliation.md).
+
+Before fleet rollout, repeat preflight against the current source inventory.
+Durable curation model configuration, an immutable deployed release and
+validation of additional fleet projects remain rollout gates.
+
+## Initial pilot acceptance
+
 | Gate | Applied evidence |
 | --- | --- |
 | Canonical publication/evidence | Five registered tools, authenticated runtime provenance, compatible v1 plus strict v2 records, immutable captures, source-workspace boundaries and idempotency |
@@ -25,14 +45,14 @@ manifest declaration, and real audit CLI exit policy tests.
 The original 39 findings on 27 subjects are addressed by 11 exact-revision
 adoptions, 11 reviewed work links, two independent request outcomes and 15
 unknown-actor disclosures. Adoption does not invent authors or verify all
-memory assertions. Historical actors remain unknown. The original 11
+memory assertions. Historical actors remain unknown. At initial pilot QA, the original 11
 knowledge nodes and all pre-existing canonical rows were preserved: seven
 tasks, 317 lifecycle events, 12 runs, seven links and six comments.
 
 Maintenance tasks `t_44e964c2` and `t_84d5b601` are complete. Six additional
 creator/event gaps on those tasks are disclosed. Four additional findings on
 the new curated context/companions have reviewed adoption and work-link
-outcomes. The final 49 outcomes are 13 adopted revisions, 13 work links, two
+outcomes. The initial 49 outcomes are 13 adopted revisions, 13 work links, two
 verified request gaps and 21 disclosed identity findings. The full
 [finding register](swarm-wiki-audit-findings.json) retains original source
 hashes and correction event IDs separately from later operational findings.

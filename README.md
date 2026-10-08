@@ -131,10 +131,12 @@ distilled from the 2026-09-28 config incident.
 
 ## Swarm Wiki
 
-Plugin v1.2 is deployed with compatible v1/v2 publications. The applied source
-audit has zero unresolved findings while retaining explicit historical
+Plugin v1.2 is deployed with compatible v1/v2 publications. The latest recorded
+pilot check has zero unresolved findings while retaining explicit historical
 unknowns. See [delivery and integration evidence](docs/swarm-wiki-delivery.md)
 and the [source finding register](docs/swarm-wiki-audit-findings.json).
+Repeat source preflight before rollout; delayed ByteRover index writes can
+reopen findings after an earlier successful check.
 
 `swarm_capture` preserves original workspace files as immutable, hashed evidence.
 `swarm_publish` records authenticated claims, scoped verification, contradictions,

@@ -51,7 +51,11 @@
       "subject_kind": "knowledge",
       "subject_sha256": "cd43034ba4fa4982f0358b133f55e2cee99d4804c6448a9f838922717ac883e1",
       "target": "_index.md",
-      "correction_event_id": "swe_f1dfff6c00c7522f516bd06aef04773d"
+      "correction_event_id": "swe_bca09b62a4d183484f8df535c2b8f3fb",
+      "superseded_correction_event_ids": [
+        "swe_f1dfff6c00c7522f516bd06aef04773d"
+      ],
+      "current_subject_sha256": "ffe29d53267a2b6dfc2453f0df1a5526be8edde8b1210bec2482be2e2822897e"
     },
     {
       "action": "A2",
@@ -434,7 +438,11 @@
       "subject_kind": "knowledge",
       "subject_sha256": "cd43034ba4fa4982f0358b133f55e2cee99d4804c6448a9f838922717ac883e1",
       "target": "_index.md",
-      "correction_event_id": "swe_97bbe2ac97bdffc07bd7c38d4c34c0d1"
+      "correction_event_id": "swe_5ff067816993204143e9dd07941693b0",
+      "superseded_correction_event_ids": [
+        "swe_97bbe2ac97bdffc07bd7c38d4c34c0d1"
+      ],
+      "current_subject_sha256": "ffe29d53267a2b6dfc2453f0df1a5526be8edde8b1210bec2482be2e2822897e"
     },
     {
       "action": "A2",
@@ -733,6 +741,221 @@
       "task_id": "29d63bed-3a3e-4aa9-9a16-bc89997758c9",
       "review_approved": true,
       "original_model_parser_failures_rejected": true
+    },
+    "snapshot": "initial_v1.2_acceptance_before_delayed_indexes"
+  },
+  "index_reconciliation": {
+    "recorded_on": "2026-10-08",
+    "task_id": "t_72e2b34b",
+    "initial_unresolved_findings": 8,
+    "corrections": [
+      {
+        "ok": true,
+        "event_id": "swe_bca09b62a4d183484f8df535c2b8f3fb",
+        "payload_digest": "9d1a731bf2220b73570881e0e53bd229884d0ee0aef77c0cb6ccc41007a59abd",
+        "comment_id": 77,
+        "recorded_on": "t_72e2b34b",
+        "duplicate": false
+      },
+      {
+        "ok": true,
+        "event_id": "swe_5ff067816993204143e9dd07941693b0",
+        "payload_digest": "839b555225b88483e2edc9dec70b50e4c49f04fea6a148cfa87c3da2bacad25e",
+        "comment_id": 78,
+        "recorded_on": "t_72e2b34b",
+        "duplicate": false
+      },
+      {
+        "ok": true,
+        "event_id": "swe_cdfcdc0a68a3933a8ebafc55170fb1a4",
+        "payload_digest": "cfec0453bf656711f072c3a07ecd1ec312dfb3b5baa16537632cf7a345c1a69c",
+        "comment_id": 80,
+        "recorded_on": "t_72e2b34b",
+        "duplicate": false
+      },
+      {
+        "ok": true,
+        "event_id": "swe_35fdeaf731a54033b1acc59a21156ee7",
+        "payload_digest": "7c14af8b2bfc73cdc9c1b6fd32800219ab08eb9b8051d8977e00cb6369be26ec",
+        "comment_id": 81,
+        "recorded_on": "t_72e2b34b",
+        "duplicate": false
+      },
+      {
+        "ok": true,
+        "event_id": "swe_269c5ec7327faa779816b925e669c9da",
+        "payload_digest": "abe05549b08795d09c839fdde1be85244423fb7ae9292ccb1b0db249d488ac8c",
+        "comment_id": 83,
+        "recorded_on": "t_72e2b34b",
+        "duplicate": false
+      },
+      {
+        "ok": true,
+        "event_id": "swe_6d6de2871e49e08af0ab084e4edd5d87",
+        "payload_digest": "b2d2eb3ddacd7eea0a592194d369524c1c12f1f7554dd5d720d4efca6b0649f1",
+        "comment_id": 84,
+        "recorded_on": "t_72e2b34b",
+        "duplicate": false
+      }
+    ],
+    "reviewed_indexes": [
+      {
+        "path": "_index.md",
+        "sha256": "ffe29d53267a2b6dfc2453f0df1a5526be8edde8b1210bec2482be2e2822897e",
+        "predecessors": {
+          "adoption": "swe_f1dfff6c00c7522f516bd06aef04773d",
+          "work_link": "swe_97bbe2ac97bdffc07bd7c38d4c34c0d1"
+        },
+        "source_task_ids": [
+          "t_6ce34613",
+          "t_7747c2f0",
+          "t_44e964c2",
+          "t_84d5b601"
+        ]
+      },
+      {
+        "path": "curated_content/_index.md",
+        "sha256": "c3fcad7188f33d1a639f50d8a1d20ce3195ec5be50f809df635bef091a47b764",
+        "predecessors": {
+          "adoption": null,
+          "work_link": null
+        },
+        "source_task_ids": [
+          "t_44e964c2",
+          "t_84d5b601"
+        ]
+      },
+      {
+        "path": "curated_content/general/_index.md",
+        "sha256": "8da6d2d11d323005ba2603d700d4d695e61dea5cfbc96731c085471bda1c507e",
+        "predecessors": {
+          "adoption": null,
+          "work_link": null
+        },
+        "source_task_ids": [
+          "t_44e964c2",
+          "t_84d5b601"
+        ]
+      }
+    ],
+    "source_state": {
+      "board": "5123fea83a622bf84d59ac6585c9d581b383643ac2676ca6e2b4d6dd87de2169",
+      "knowledge": "3624a7d79cfae3e7182966fd29cc6ff6783ecfb583fb693e915fa0b2737e8901",
+      "raw": "9a894dbd83a44d43fd1018db740976d7264dc7728b4efde829794732d9e25ca8",
+      "rules": "72301a16f17dba9ebb6b1ef177cf0b7dfcb0b7f003a86137167a03caea56eb49"
+    },
+    "pre_existing_rows_preserved": {
+      "tasks": {
+        "original_rows": 9,
+        "changed_or_missing": 0,
+        "now": 10
+      },
+      "task_events": {
+        "original_rows": 392,
+        "changed_or_missing": 0,
+        "now": 404
+      },
+      "task_runs": {
+        "original_rows": 14,
+        "changed_or_missing": 0,
+        "now": 15
+      },
+      "task_comments": {
+        "original_rows": 75,
+        "changed_or_missing": 0,
+        "now": 84
+      },
+      "task_links": {
+        "original_rows": 7,
+        "changed_or_missing": 0,
+        "now": 7
+      }
+    },
+    "retry_all_duplicate": true,
+    "no_knowledge_rewrites": true,
+    "no_curation_calls": true,
+    "regression_tests": 94,
+    "rebuild": {
+      "manifest_hashes_match": true,
+      "local_links_checked": 1244,
+      "broken_links": [],
+      "byte_identical_rebuild": true,
+      "pages": 129,
+      "unresolved": 0
     }
+  },
+  "current_projection": {
+    "recorded_on": "2026-10-08",
+    "findings": 55,
+    "unresolved_findings": 0,
+    "source_state": {
+      "board": "5123fea83a622bf84d59ac6585c9d581b383643ac2676ca6e2b4d6dd87de2169",
+      "knowledge": "3624a7d79cfae3e7182966fd29cc6ff6783ecfb583fb693e915fa0b2737e8901",
+      "raw": "9a894dbd83a44d43fd1018db740976d7264dc7728b4efde829794732d9e25ca8",
+      "rules": "72301a16f17dba9ebb6b1ef177cf0b7dfcb0b7f003a86137167a03caea56eb49"
+    },
+    "outcome_counts": {
+      "superseded_history": 2,
+      "verified": 2,
+      "adopted_current_revision": 15,
+      "disclosed_unknown": 21,
+      "linked": 15
+    },
+    "additional_findings": [
+      {
+        "audit_id": "audit_192307a3f2719bcc",
+        "class": "invalid-audit-record",
+        "correction_event_id": "swe_5ff067816993204143e9dd07941693b0",
+        "message": "Untrusted author, changed subject, invalid derivation or incomplete independent assessment",
+        "outcome": "superseded_history",
+        "severity": "warning",
+        "target": "swe_97bbe2ac97bdffc07bd7c38d4c34c0d1"
+      },
+      {
+        "audit_id": "audit_24ff04275c21d6fc",
+        "class": "invalid-audit-record",
+        "correction_event_id": "swe_bca09b62a4d183484f8df535c2b8f3fb",
+        "message": "Untrusted author, changed subject, invalid derivation or incomplete independent assessment",
+        "outcome": "superseded_history",
+        "severity": "warning",
+        "target": "swe_f1dfff6c00c7522f516bd06aef04773d"
+      },
+      {
+        "audit_id": "audit_ce9e273f7e5e68bb",
+        "class": "missing-provenance",
+        "correction_event_id": "swe_cdfcdc0a68a3933a8ebafc55170fb1a4",
+        "message": "Knowledge assertion lacks author/time; node timestamp alone is not authorship",
+        "outcome": "adopted_current_revision",
+        "severity": "warning",
+        "target": "curated_content/_index.md"
+      },
+      {
+        "audit_id": "audit_b4718b3e6c53c8fb",
+        "class": "missing-provenance",
+        "correction_event_id": "swe_269c5ec7327faa779816b925e669c9da",
+        "message": "Knowledge assertion lacks author/time; node timestamp alone is not authorship",
+        "outcome": "adopted_current_revision",
+        "severity": "warning",
+        "target": "curated_content/general/_index.md"
+      },
+      {
+        "audit_id": "audit_928e4e228a495a79",
+        "class": "orphan-topic",
+        "correction_event_id": "swe_35fdeaf731a54033b1acc59a21156ee7",
+        "message": "No canonical publication links this node to work",
+        "outcome": "linked",
+        "severity": "warning",
+        "target": "curated_content/_index.md"
+      },
+      {
+        "audit_id": "audit_a8ecf8ebc327af4d",
+        "class": "orphan-topic",
+        "correction_event_id": "swe_6d6de2871e49e08af0ab084e4edd5d87",
+        "message": "No canonical publication links this node to work",
+        "outcome": "linked",
+        "severity": "warning",
+        "target": "curated_content/general/_index.md"
+      }
+    ]
   }
 }

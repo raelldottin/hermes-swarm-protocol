@@ -1,5 +1,15 @@
 # Swarm Wiki maintenance rules v2
 
+ByteRover may write root and intermediate indexes after a successful curator
+response or review approval. Review and capture all changed index revisions,
+publish exact-hash adoption/work-link successors, then rebuild and check the
+complete source inventory. Never infer current acceptance from an earlier
+generation's zero findings. Repeat preflight immediately before rollout.
+
+Keep reviewed predecessor IDs fixed across retries. A changed inventory
+requires a new review; it cannot reuse approval for old bytes. Canonical
+metadata corrections should not invoke curation and start another index cycle.
+
 Copy this trusted specification to `<workspace>/.swarm/SWARM_WIKI.md` before deployment. It is not generated from worker content. A project may version a reviewed extension, but the compiler records its byte hash and never executes it.
 
 - Canonical work state: Hermes Kanban. Canonical curated prose: the project ByteRover tree. Structured publications: compatible `hermes-swarm/wiki-v1` envelopes and `hermes-swarm/wiki-v2` provenance/request-assessment envelopes in Kanban comments. Wiki pages are disposable, untrusted projections.
