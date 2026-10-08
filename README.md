@@ -2,8 +2,9 @@
 
 Swarm coordination semantics for [Hermes Agent](https://hermes-agent.nousresearch.com/)
 fleets: a thin protocol layer over Hermes Kanban (work state) and ByteRover (shared
-project knowledge). No new storage, no daemon, no networking — Kanban cards and
-comments are the durable state.
+project knowledge), with a generated Swarm Wiki for readable knowledge and audit.
+No new coordination datastore, daemon or networking: Kanban cards/comments remain
+canonical, original evidence is immutable, and wiki pages are disposable.
 
 ```text
 Kanban        = work state
@@ -12,11 +13,12 @@ workers       = automatic authors
 orchestrators = read-mostly coordinators
 swarm         = request / verify / route semantics
 memory        = evidence, never sole verification authority
+wiki          = generated knowledge / human audit projection
 ```
 
 ## What it provides
 
-- **`swarm-protocol`** — a Hermes user plugin registering three tools (toolset `swarm`):
+- **`swarm-protocol`** — a Hermes user plugin registering five tools (toolset `swarm`):
   - `swarm_request` — create a linked Kanban card carrying a `hermes-swarm/v1` envelope;
     identity comes from the runtime profile, never from tool args (anti-spoofing).
   - `swarm_verify` — two-phase independent verification. `inspect` normalizes ByteRover
@@ -126,3 +128,29 @@ docs/kanban-worker-safety.md  Hermes #129021 compatibility + repair runbook
 See `docs/kanban-worker-safety.md` for the worker terminal-path/status-integrity guard.
 See `docs/recovery.md` for the canonical fleet memory policy and the recovery rules
 distilled from the 2026-09-28 config incident.
+
+## Swarm Wiki
+
+Plugin v1.2 is deployed with compatible v1/v2 publications. The applied source
+audit has zero unresolved findings while retaining explicit historical
+unknowns. See [delivery and integration evidence](docs/swarm-wiki-delivery.md)
+and the [source finding register](docs/swarm-wiki-audit-findings.json).
+
+`swarm_capture` preserves original workspace files as immutable, hashed evidence.
+`swarm_publish` records authenticated claims, scoped verification, contradictions,
+reconciliations, decisions, consequences, routes and accepted ByteRover synthesis
+in Kanban comments. Neither tool edits generated pages.
+
+`ops/build_wiki.py` reads canonical sources, renders index/digest/topic/history
+pages, lints uncertainty and provenance, and atomically publishes a generation.
+`--check` compares all bytes without changing output. Existing request/verify/route
+semantics remain compatible.
+
+See [operations and payloads](docs/swarm-wiki-usage.md),
+[design contract](docs/swarm-wiki-design.md),
+[maintenance rules](docs/SWARM_WIKI.md), and
+[research, plan and QA evidence](docs/swarm-wiki-implementation.md).
+
+Run tests with the installed Hermes virtualenv, this checkout's plugin path and
+inherited Kanban routing pins removed, as shown in the design contract. Generated
+wiki output is not proof that its underlying claims have passed verification.

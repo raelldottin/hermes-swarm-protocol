@@ -1,10 +1,8 @@
 """Tests for the swarm-protocol plugin (user plugin, loaded through real discovery).
 
 Covers the design contract from the implementation doc:
-  1. Real plugin discovery registers all three tools.
-  2. ByteRover curate timeout compatibility raises the Hermes floor without lowering
-     a larger upstream value.
-  3. swarm_request creates a linked Kanban card + source comment; identity comes from the
+  1. Real plugin discovery registers all five tools.
+  2. swarm_request creates a linked Kanban card + source comment; identity comes from the
      profile, never args.
   4. swarm_verify inspect normalizes ByteRover outcomes into MEMORY_* states.
   5. swarm_verify commit: pass without live evidence is REFUSED (memory is evidence,
@@ -75,7 +73,7 @@ def test_real_discovery_registers_swarm_tools(monkeypatch, tmp_path):
     from tools.registry import registry
 
     discover_plugins(force=True)
-    missing = [t for t in ("swarm_request", "swarm_verify", "swarm_route")
+    missing = [t for t in ("swarm_request", "swarm_verify", "swarm_route", "swarm_publish", "swarm_capture")
                if registry.get_entry(t) is None]
     if missing:
         pytest.skip(f"swarm-protocol not enabled on this host (plugins.enabled); missing: {missing}. "
@@ -120,6 +118,28 @@ def test_byterover_curate_timeout_patch_reaches_explicit_curate(swarm_env, monke
     assert result["success"] is True
     assert seen["args"] == ["curate", "--", "remember this decision"]
     assert seen["timeout"] == 660
+
+
+def test_byterover_curate_parse_failure_cannot_report_success(swarm_env, monkeypatch):
+    from plugins.memory import byterover as brv
+    mod = swarm_env["mod"]
+    monkeypatch.setattr(mod, "_active_memory_provider", lambda: "byterover")
+    replies = [
+        {"success": True, "output": "Thinking...\nResponse parsing failed: Response has neither content nor tool calls"},
+        {"success": True, "output": "Thinking...\nNot Found"},
+        {"success": True, "output": "Knowledge saved"},
+        {"success": False, "error": "timeout"},
+    ]
+    monkeypatch.setattr(brv.ByteRoverMemoryProvider, "_curate", lambda self, content: replies.pop(0))
+    assert mod._patch_byterover_curate_response()
+    assert not mod._patch_byterover_curate_response()
+    provider = brv.ByteRoverMemoryProvider()
+    failed = provider._curate("original")
+    assert failed["success"] is False
+    assert "zero exit status" in failed["error"]
+    assert provider._curate("original")["success"] is False
+    assert provider._curate("original") == {"success": True, "output": "Knowledge saved"}
+    assert provider._curate("original") == {"success": False, "error": "timeout"}
 
 
 def test_byterover_curate_timeout_patch_never_lowers_upstream(swarm_env, monkeypatch):
