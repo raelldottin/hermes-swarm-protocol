@@ -1,4 +1,11 @@
 __pycache__/
 *.pyc
 .venv/
+.swarm/wiki
+.swarm/raw/
+.swarm/maintenance/
+.swarm/SWARM_WIKI.md
+.swarm/.wiki-generations/
+.swarm/.wiki.lock
+.swarm/.wiki.next-*
 .pytest_cache/

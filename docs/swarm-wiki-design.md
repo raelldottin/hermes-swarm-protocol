@@ -1,440 +1,501 @@
-# Swarm Wiki — Design Contract (Phase 0)
+# Swarm Wiki — Design Contract
 
-Status: design only. No compiler code exists yet; nothing in this document has been
-implemented. This document is the contract a future `ops/` compiler must satisfy.
+Status: **implemented and deployed in plugin v1.2.0** after research, design QA and
+implementation QA. `swarm_publish` and `swarm_capture` add canonical comment
+publications and immutable evidence. `ops/build_wiki.py` provides the independent
+compiler/linter. Existing request/verify/route behavior remains compatible.
+See [operations](swarm-wiki-usage.md) and [QA evidence](swarm-wiki-implementation.md).
+Worker deployment requires explicit project/member/maintainer configuration.
 
-Karpathy-style generated wiki: a readable, cross-linked, generated-from-source
-narrative of what the swarm did, claimed, verified, and disputed. Like Karpathy's
-generated blog, every word is compiled from canonical inputs — never hand-edited,
-never the system of record.
+Task workspaces may be Hermes scratch directories outside the checkout. Every
+new publication includes a runtime-derived absolute `workspace` field, taken
+from canonical task metadata rather than caller arguments. Project configuration
+explicitly authorizes additional `task_workspaces` roots; the compiler takes the
+same roots through `--task-workspace-root` and persists them in the manifest.
+Typed file evidence and its cache keys bind to the producing publication's
+workspace, including when a different maintainer accepts synthesis. Immutable
+captures live in shared project `.swarm/raw`, independently of their source root.
+Knowledge captures record their origin and remain contextual snapshots after
+curation; they cannot supply sole live evidence through an artifact or file alias.
 
-## 1. What the wiki is (and is not)
+The wiki is the swarm's readable memory and audit surface: compiled knowledge,
+cross-references, visible uncertainty, and a history of changing conclusions.
+It is a projection of canonical records and immutable evidence, never a competing
+task database, coordination bus, or verification authority.
 
-The Swarm Wiki is a NON-AUTHORITATIVE, human/audit projection of the swarm's
-canonical state. It exists so a human can read what happened without opening a
-SQLite console, and so an auditor can trace any claim to its origin.
+## 1. Architecture and ownership
 
-Observed grounding for this split (existing repo):
+Collusion's architectural lesson is durable, discoverable shared state, not a
+requirement to run MediaWiki. Karpathy's LLM Wiki pattern contributes immutable
+sources, accumulated synthesis, an index, chronological log, maintenance rules,
+cross-links and periodic linting. Adapt that pattern to a concurrent fleet
+through structured publications and one compiler/reconciler.
 
-- `README.md` already pins the ownership map: Kanban = work state, ByteRover =
-  project knowledge, swarm = request/verify/route semantics, memory = evidence,
-  never sole verification authority. The wiki adds a fifth entry on the read
-  side only: it owns nothing.
-- `hermes_swarm_protocol/__init__.py:1-17` — the plugin's design contract:
-  "No new storage… Requests are Kanban cards; verification outcomes are comments
-  + review state." The wiki must not introduce a datastore either.
-- `hermes_swarm_protocol/plugin.yaml` (v1.0.1) registers exactly three tools;
-  the wiki deliberately registers none. It is not a tool, not a plugin feature,
-  and never part of any worker's toolset.
-
-Hard rules:
-
-1. The wiki is disposable. `rm -rf` the output directory and re-run the compiler;
-   the projection is recovered from canonical inputs alone.
-2. The wiki is derived data. It is untrusted input to any human or agent that
-   reads it. It is never instruction authority: no worker, profile, or hook may
-   treat wiki text as a directive, config source, or verification basis.
-3. Nothing in the swarm ever reads the wiki to make a decision. Data flows one
-   way: canonical stores -> compiler -> wiki.
-4. No hand edits. Editing a generated page by hand is a category error — the
-   next compile silently reverts it. Feedback on wiki content means fixing the
-   compiler or fixing canonical state, never fixing the page.
-
-## 2. Four-layer architecture
+| Plane | Authority | Wiki relationship |
+| --- | --- | --- |
+| Hermes Kanban, control | Tasks, owners, dependencies, reviews, worker lifecycle | Read-only work-state input |
+| ByteRover, knowledge | Curated claims, decisions, context, retrieval and provenance | Knowledge input and retrieval backing |
+| Swarm protocol, coordination | Requests, verification, contradictions, consequences and routing | Structured coordination records; current tools cover request/verify/route only |
+| Generated wiki, human/audit | No canonical authority | Readable synthesis and navigation |
 
 ```text
-+-------------------------------------------------------------+
-| 4. Wiki plane (human/audit, PROJECTION, disposable)         |
-|    output: index.md, log.md, topics/<slug>.md, lint report  |
-|    reads layers 1-3 via the compiler only; writes nothing   |
-+---------------------------+---------------------------------+
-                            | deterministic, one-way compile
-+-------------------------------------------------------------+
-| 3. Swarm coordination plane (hermes_swarm_protocol plugin)  |
-|    swarm_request / swarm_verify / swarm_route               |
-|    semantics over cards + comments; no storage (__init__.py |
-|    :16 "Storage: none")                                     |
-+---------------------------+---------------------------------+
-                            | reads/writes via Kanban tools
-+-------------------------------------------------------------+
-| 2. ByteRover knowledge plane (shared project trees)         |
-|    ~/.hermes/byterover-projects/<project>/.brv/context-tree  |
-|    auto_extract: true (workers) / false (orchestrators)     |
-|    wiki reads the TREE FILES, read-only                      |
-+---------------------------+---------------------------------+
-                            | canonical durable state
-+-------------------------------------------------------------+
-| 1. Kanban control plane (system of record)                  |
-|    ~/.hermes/kanban/boards/<board>/kanban.db                |
-|    tasks, task_links, task_comments, task_events, task_runs  |
-+-------------------------------------------------------------+
+Hermes Kanban       ByteRover knowledge       immutable raw evidence
+     |                     |                         |
+     +---------- structured records ----------------+
+                           |
+                 Swarm protocol semantics
+                           |
+                 one compiler / reconciler
+                           |
+                 generated Markdown wiki
+                      /           \
+                 human audit    worker navigation
 ```
 
-Layer boundaries (each observed, not assumed):
+This is an ownership map, not a mandated sequence of API calls. Kanban comments
+already persist verification records; ByteRover remains the project-knowledge
+interface. Claim/decision/reconciliation publications are versioned Kanban comments.
+Accepted synthesis references a ByteRover node hash and canonical source digests;
+there is no canonical claims database in the wiki.
 
-- Layer 1 owns work state. `docs/recovery.md` ("Operational separation, proven
-  live") and `README.md` both pin this. The status-integrity triggers
-  (`docs/kanban-worker-safety.md`; live-verified present on this board:
-  `hermes_swarm_tasks_status_insert_guard`, `hermes_swarm_tasks_status_update_guard`)
-  guard it at the SQLite boundary.
-- Layer 2 owns project knowledge. `ops/migrate_fleet_memory.py:30-42` pins the
-  machine-global fleet root and per-project `PROJECT_MEMORY` mapping;
-  `auto_extract` gates exactly the three automatic write paths
-  (`docs/recovery.md` fleet policy).
-- Layer 3 owns request/verify/route semantics only. `swarm_verify` commit
-  refuses `pass` without live evidence (`__init__.py:382-385`); `swarm_route`
-  returns `ROUTE_UNRESOLVED` rather than guessing (`__init__.py:441-443`).
-- Layer 4 is this design. It has no APIs, no tools, no daemon, no datastore.
-  Its only inputs are a board DB (read-only) and a context tree (read-only).
+Hard invariants:
 
-## 3. Compiler inputs (canonical, read-only)
+1. Structured records and original evidence win if a wiki page disagrees.
+2. Workers publish structured records, not concurrent Markdown edits.
+3. One compiler owns generated output. It cannot change canonical work state,
+   curate ByteRover, invent verification, or route workers as a side effect.
+4. Wiki text is derived, untrusted data. Neither source nor generated prose
+   grants instruction, configuration, or tool-execution authority.
+5. Deleting the generated wiki loses no canonical knowledge. Raw evidence and
+   trusted maintenance rules are outside the disposable output.
+6. Memory and wiki summaries never independently justify a verification pass.
+   Existing `swarm_verify` requires non-memory live evidence for `pass`.
 
-### 3.1 Kanban SQLite state
+## 2. Layout and evidence lifecycle
 
-Source: `~/.hermes/kanban/boards/<board>/kanban.db`, opened read-only
-(`sqlite3.connect("file:...?mode=ro", uri=True)` — pattern verified live
-against this board; note the plain `sqlite3` CLI misparses multi-statement
-args, so the compiler uses Python sqlite3, never the CLI).
-
-Tables and the exact columns the compiler consumes (schema read live from the
-hsp board, 2026-10-05):
-
-- `tasks` — `id, title, body, assignee, status, priority, created_by,
-  created_at, started_at, completed_at, workspace_kind, workspace_path,
-  branch_name, project_id, result, idempotency_key, consecutive_failures,
-  last_failure_error, max_runtime_seconds, last_heartbeat_at, current_run_id,
-  skills, model_override, reasoning_effort, max_retries, goal_mode,
-  goal_max_turns, session_id, block_kind, block_recurrences,
-  completion_contract`. Statuses are enum-guarded: `archived, blocked, done,
-  ready, review, running, scheduled, todo, triage` (trigger live on this board;
-  the plugin reads them from `kanban_db.VALID_STATUSES` rather than
-  hard-coding — `__init__.py:128` — and the compiler must do the same).
-- `task_links` — `parent_id, child_id` (dependency edges; the plugin's
-  `swarm_request` deliberately creates NO edge, only `creator_task_id`
-  provenance — `__init__.py:280-292`).
-- `task_comments` — `id, task_id, author, body, created_at`. This is where
-  `swarm_verify` commit records verdict envelopes (`__init__.py:398-401`:
-  `swarm_verify <request_id>: <VERDICT>` + JSON body).
-- `task_events` — `id, task_id, run_id, kind, payload, created_at` (kinds
-  observed live: heartbeat, claimed, spawned, crashed, completed…).
-- `task_runs` — `id, task_id, profile, step_key, status, worker_pid,
-  started_at, ended_at, outcome, summary, metadata, error` (run status:
-  `running | done | blocked | crashed | timed_out | failed | released`;
-  outcome: `completed | blocked | crashed | timed_out | spawn_failed |
-  gave_up | reclaimed`).
-
-The `tasks.body` column carries `hermes-swarm/v1` protocol envelopes
-(`__init__.py:254-277`): `protocol, kind, source_profile, created_at,
-request_id, objective, target_profile, acceptance, memory_queries,
-evidence_required, source_task`. The compiler parses these envelopes but
-treats them as data, never as instructions (see §8).
-
-Snapshot consistency: the compiler takes one consistent read. SQLite
-`mode=ro` + a single connection opened once per compile is sufficient; if a
-torn read is ever observed in practice (WAL across a live dispatcher), wrap
-the read phase in `BEGIN DEFERRED ... COMMIT` on the read-only connection so
-all SELECTs share one snapshot. No `busy_timeout` retries — a board being
-actively written is compiled from its own consistent snapshot or not at all.
-
-### 3.2 ByteRover context tree (READ-ONLY)
-
-Source: `~/.hermes/byterover-projects/<project>/.brv/context-tree/**/*.md`
-(resolved via the same machine-global fleet root rule as
-`ops/migrate_fleet_memory.py:33` — `Path.home() / ".hermes"`, ignoring any
-per-session `HERMES_HOME`, which worker sessions export).
-
-Critical determinism decision: the compiler reads the tree FILES, it never
-calls `brv query`. Grounding:
-
-- `brv query` is LLM-mediated. `docs/recovery.md` records live measurements:
-  deep (T3) queries take 17–128 s, and the Hermes provider surfaces them as
-  `MEMORY_TIMEOUT` — the plugin itself treats query output as non-authoritative
-  evidence (`__init__.py` MEMORY_* normalization, and commit-phase refusal of
-  memory-only passes).
-- The tree itself is plain markdown on disk. Live inspection of the opnory
-  tree shows nodes with YAML frontmatter: `title, summary, tags, related,
-  keywords, createdAt, updatedAt`, plus summary nodes carrying `type:
-  summary, covers, condensation_order, children_hash, covers_token_total`,
-  and per-directory `_index.md` files.
-
-So the deterministic interface is the filesystem: every node file, its
-frontmatter, its `related` cross-references, its body text. `brv query` output
-MAY appear inside an appendix or topic page only as a clearly-labeled,
-verbatim quote captured in canonical state first (e.g., a comment), never
-fetched at compile time.
-
-Read-only enforcement: the compiler never invokes `brv curate`, never writes
-into `.brv/`, and should hold the connection/paths so that a mistake fails
-closed (open files `rb`, never `ab`/`wb`; no exceptions swallowed).
-
-## 4. Compiler (ops/build_wiki.py — future work)
-
-Lives in `ops/`, following the repo's operational-tool conventions:
-
-- Audit-first, like `ops/repair_kanban_status.py`: default invocation is a
-  full compile + lint report with exit code reflecting lint findings;
-  there is no `--apply` because there is nothing to repair — output is
-  disposable.
-- Single-file, stdlib-only where possible, Python 3.9+ compatible, like the
-  existing ops scripts (`repair_kanban_status.py` uses argparse + sqlite3 +
-  pathlib only).
-- CLI sketch (design intent, not implementation):
-  `python ops/build_wiki.py --board hsp --project hermes-swarm-protocol
-  [--out wiki/] [--check]`. `--check` compiles to a temp dir and exits
-  non-zero if the output differs from the committed output — the CI-style
-  reproducibility gate.
-
-Explicit non-goals (mirroring `README.md` "no new storage, no daemon, no
-networking"):
-
-- NO new authoritative datastore — the wiki output directory is not a store;
-  it is a build artifact with the same status as `dist/`.
-- NO daemon, NO server, NO hot-reload watcher.
-- NO P2P, NO networking, NO publishing hooks. If a human wants the wiki on the
-  web, they run `git add wiki/ && git commit` themselves; the compiler never
-  does.
-- NO concurrent direct wiki editing — by construction: pages are generated.
-  A conflict between a hand edit and generated content is resolved by
-  deleting the hand edit. The compiler may make this literal: `--check`
-  comparing against a clean compile catches hand edits the same way it
-  catches non-reproducibility.
-- NO plugin tools registered. The wiki is not swarm coordination. Workers
-  never gain a "wiki_write" or "wiki_read" tool; the only legitimate reader
-  is a human or an auditor with filesystem access.
-
-## 5. Output layout
+Example project artifact layout:
 
 ```text
-wiki/
-  index.md            — entry point: what this swarm is, board stats, the
-                        layer map, links into topics and log
-  log.md              — strict chronological event log (see 5.2)
-  topics/<slug>.md    — one page per topic/task/claim cluster (see 5.3)
-  lint-report.md      — generated findings, same lint exit state as stdout
+.swarm/
+  raw/                              immutable originals, NOT generated output
+    evidence/<artifact-id>.<ext>
+    test-results/<artifact-id>.txt
+    source-snapshots/<artifact-id>.<ext>
+  wiki/                             disposable projection
+    index.md
+    log.md
+    architecture/<topic-id>.md
+    claims/<claim-id>.md
+    decisions/<decision-id>.md
+    investigations/<investigation-id>.md
+    lint-report.md
+    manifest.json
+  SWARM_WIKI.md                     versioned maintenance/schema rules
 ```
 
-### 5.1 index.md
+Kanban SQLite and the ByteRover project tree remain in their existing locations.
+`raw/` contains original artifacts, not coordination state. `SWARM_WIKI.md` is
+a trusted project specification, never generated from worker-authored content.
+The shipped template is `docs/SWARM_WIKI.md`; deployment installs a reviewed
+copy in the workspace. The compiler records the selected rule file's byte hash.
 
-Generated front page: project identity, board name, compile timestamp (UTC,
-explicitly marked as the only non-deterministic field — see §7), task counts
-by status, verifier verdict counts, link list of all topic pages, and the
-standing banner: "This wiki is a disposable projection. Canonical state is
-the Kanban board and the ByteRover tree."
+### 2.1 Immutable raw sources
 
-### 5.2 log.md
+`swarm_capture` captures original test output,
+source snapshots and browser/runtime evidence before publication references them.
+Each artifact has a stable ID, byte hash, relative path, media type, capture time,
+producer, task and optional repository/commit identity in canonical provenance.
 
-One line per canonical event, ordered by `(created_at, id)` from a UNION of:
+Use content-addressed or exclusive-create paths. Never overwrite an artifact
+with different bytes. Same-byte ingestion is idempotent; corrections create new
+artifacts and explicit superseding records while preserving the original.
+The compiler reads files and checks hashes; it never writes raw evidence,
+refreshes sources in place, or fabricates captures from summaries.
 
-- `task_events` (claim/spawn/heartbeat/crash/complete lifecycles),
-- `task_comments` (including `swarm_request` handoff comments and
-  `swarm_verify` verdict comments),
-- `task_runs` start/end (`started_at`/`ended_at`),
-- task creation (`tasks.created_at`) and completion (`completed_at`).
+Original evidence already stored in a canonical comment/run record retains that
+row's provenance. External URIs remain external sources unless actually captured;
+they cannot be described as immutable local artifacts merely because they appear
+in a citation. Missing legacy artifacts stay visible with limitations/findings.
+The chain must remain `raw evidence -> interpretation`.
 
-Each line: UTC ISO timestamp, task id, kind, one-line summary truncated
-consistently (e.g., 160 chars), and a stable anchor slug so topic pages can
-link to log entries (`#L-<seq>`). Heartbeats collapse: N consecutive heartbeats
-for the same run become one line ("N heartbeats, last at …") — collapse is a
-pure function of the event stream, so determinism is preserved.
+### 2.2 Git and output ownership
+
+Markdown and maintenance rules can be Git-versioned and viewed in Obsidian.
+Git history supplements provenance; it does not make generated prose canonical.
+Define artifact retention/access policy before committing captures; versioning
+a projection must not make restricted evidence public.
+
+The compiler writes only the designated wiki output. Reject overlapping
+source/output paths, including symlink aliases. Rebuild/check/cleanup must never
+remove `raw/`, `SWARM_WIKI.md`, `.brv/`, board databases or unrelated user files.
+
+## 3. Canonical inputs and structured publications
+
+### 3.1 Existing stores
+
+Read the selected board with Python SQLite `mode=ro` and one explicit read
+transaction spanning all table reads. A connection alone is insufficient for a
+consistent multi-table snapshot during dispatcher writes. Use `query_only` as
+defense in depth. Never initialize/migrate a board at compile time. Missing
+required schema is an explicit error.
+
+Consume needed fields from `tasks`, `task_links`, `task_comments`,
+`task_events` and `task_runs`: identity, objective/body, creator, status,
+lifecycle times, result, workspace context, block state, authored publications,
+run summaries and events. Dependency edges remain distinct from source-task
+provenance. `creator_task_id` where available and envelope `source_task` are
+provenance, not proof that a request depends on source-task completion.
+
+Read valid task statuses from installed Hermes `kanban_db.VALID_STATUSES`
+without a mutating connection path. Fail if unavailable; do not guess an enum.
+Unknown stored statuses are integrity findings, not silent remappings.
+
+Read project `.brv/context-tree/**/*.md` files, frontmatter, summary nodes,
+indexes and `related` links. Do not call LLM-mediated `brv query` during
+compilation. Canonically captured query output may be quoted as a memory
+observation; a timeout does not mean a claim is false or absent.
+
+Default fleet root is `Path.home() / ".hermes"`, matching migration tooling's
+machine-global rule rather than worker-session `HERMES_HOME`. Support explicit
+DB/tree/raw/repo paths for fixtures and deployments. Compile one board/project
+per invocation, document source locations, and never infer cross-project access.
+
+Capture a stable knowledge-tree/raw read: sorted inventory, content hashes,
+before/after validation, retry-or-fail on changes, including atomic replacement.
+SQLite and the tree have no distributed transaction. Record their snapshot
+fingerprints and dangling references instead of claiming an atomic cross-store
+capture.
+
+### 3.2 Versioned publications and legacy compatibility
+
+Plugin v1.2 retains all v1 records and adds `hermes-swarm/wiki-v2` records
+for `provenance` and `request_assessment`. The prefix and schema version must
+agree. Maintainer provenance binds exact knowledge bytes or canonical board
+task/event row digests. Adoption records reviewed responsibility,
+never original authorship or factual verification. Work links and derivation
+have separate meanings; cyclic or changed-revision lineage is invalid.
+Canonical identity evidence is required for historical attribution. Unknown
+creator/caller disclosures preserve missing identity for task and event rows.
+
+An independent request assessment binds the exact archived request envelope,
+every acceptance criterion index/digest, full frozen commit and explicit
+request scope. A PASS requires complete passing criterion coverage and
+available non-memory evidence. Request creators, assignees and target profiles
+cannot self-verify. Opposing active verdicts preserve uncertainty. The compiler
+retains original findings with correction IDs and reports unresolved findings
+separately from adopted, linked, verified, attributed or disclosed history.
+Source change, source loss or supersession invalidates current annotations.
+
+Workers submit structured publications to an authenticated canonical path.
+The publisher supplies event identity, runtime profile identity, task, time and
+source provenance. Identity never comes from model-controlled `worker` fields.
+Same-ID/same-payload retries are idempotent; same-ID/different-payload is rejected.
+Publications are append-only; revisions link to superseded records. User-written
+JSON alone is not an authenticated publication.
+
+Envelope fields: `protocol`, `schema_version`, `event_id`, `type`, `project`,
+`topic`, `task_id`, `actor`, `publication_key`, `recorded_at`, `data` and
+`payload_digest`. Evidence is typed inside `data`. Canonical source provenance
+comes from the board/comment row, author and timestamp, not caller-supplied JSON.
+Local references carry hashes. Exact payloads are documented in the operations guide.
+
+| Type | Additional fields / meaning |
+| --- | --- |
+| claim | Claim ID, assertion, scope, optional confidence, consequential flag |
+| verification | Target claim/request, verdict, verifier, scope, live evidence, rationale |
+| contradiction | Conflicting claim IDs, scope and supporting evidence |
+| reconciliation | Contradiction ID, disposition, scoped conclusion, supporting record IDs |
+| decision | Decision ID, rationale, claim/evidence links, superseded decision if any |
+| consequence | Finding/claim IDs, affected task IDs, recorded impact |
+| route | Requested role, resolved profile or unresolved outcome, associated task |
+
+Illustrative model-controlled `data` payloads are below; common fields are
+supplied by `swarm_publish`. The returned event ID serves as the claim ID:
+
+```json
+{"assertion":"Tenant-specific issuer is lost during initialization.","scope":"tenant-specific path","confidence":0.91,"evidence":[{"kind":"runtime","text":"Original reproduction output"}]}
+{"claim_id":"<returned-event-id>","verdict":"partial","scope":"default path unaffected","rationale":"Independent scope assessment","live_evidence":[{"kind":"runtime","text":"Original independent observation"}]}
+```
+
+Compatibility is explicit: preserve existing `hermes-swarm/v1` request bodies
+and `swarm_verify` comment envelopes. Current verdicts are `pass`, `fail`,
+`inconclusive`, `blocked`. `partial` is supported only by new structured `swarm_publish` assessments,
+not the existing `swarm_verify` tool. It records a scoped observation and never
+becomes a pass for the original broader claim.
+
+Objectives, comments, run summaries and ByteRover prose also contain assertions.
+Preserve these as legacy/unstructured claims with row/file pointers. Never invent
+authenticated claim IDs, authors or verification from prose. A node timestamp
+is not an author identity; missing provenance renders unknown and triggers lint.
+
+Publication mapping is pinned: structured envelopes live in authenticated
+Kanban comments. Existing `brv_curate` maintains ByteRover prose; configured
+maintainers accept exact node/source revisions through synthesis publications.
+
+## 4. One compiler/reconciler and accumulated synthesis
+
+Entry point: `ops/build_wiki.py`, a batch operational tool, not a daemon or
+worker write API. Interface:
+
+```text
+python ops/build_wiki.py --board hsp --project hermes-swarm-protocol
+  [--out .swarm/wiki] [--check] [--lint]
+```
+
+Support explicit input paths and repo identity. Compilation always produces lint;
+`--lint` emphasizes audit output. Findings set a non-zero exit status but do
+not suppress readable pages. Operational/schema failures use a distinct status
+and never publish partial output. Clean compilation/check exits 0, findings or a
+different check exit 1, and operational failures exit 2.
+
+Lock the output target, build in a sibling generation directory, validate
+links/provenance, then atomically switch the owned wiki symlink. Readers must not see half-old/half-new pages. Concurrent
+compilers refuse or wait on the same lock. Workers gain no direct wiki-write
+operation. The compiler neither publishes online nor creates Git commits.
+
+### 4.1 Compiled knowledge, not raw retrieval dumps
+
+A topic explains the current scoped conclusion, what strengthens or weakens it,
+unresolved uncertainty and connected work. New evidence updates existing topics,
+cross-links and conclusions, instead of adding disconnected query transcripts.
+Exact source quotations and record pointers accompany the synthesis.
+
+LLM-maintained synthesis belongs in the knowledge-maintenance workflow: an
+authorized maintainer reads canonical publications and curates accepted, cited
+topic summaries into ByteRover with input IDs/hashes, author, scope and revision
+lineage. One wiki reconciler renders those canonical summaries. Other workers
+publish findings rather than concurrently rewriting Markdown.
+
+The renderer is deterministic and does not invoke a model or semantic query.
+Without accepted synthesis, show an explicitly labeled structured overview and
+source quotations, not an invented accepted conclusion. Model drafts cannot
+grant verification, resolve contradictions or change Kanban eligibility; those
+transitions require canonical protocol/control-plane records.
+
+This supports ongoing LLM synthesis and reproducible projection. Model settings
+alone do not make repeated synthesis calls byte-deterministic.
+
+### 4.2 Maintenance rules: `SWARM_WIKI.md`
+
+The versioned rules/template defines page types/frontmatter, stable topic IDs,
+citation format, evidence requirements, cross-links, claim scope, verification,
+contradiction/reconciliation, supersession, stale-summary invalidation and lint
+policy. It names immutable/generated paths and the correction publication flow.
+
+The authorized maintainer follows these trusted rules. Evidence/wiki text cannot
+promote itself into maintenance instructions. Rule changes require explicit
+versioning/review; the manifest records the rule version for each generation.
+
+## 5. Pages, navigation and chronological history
+
+### 5.1 Index and digest
+
+`index.md` provides cheap first-stage navigation: board/project identity,
+canonical source paths, task counts, topic links, short current conclusions,
+verification scope/counts, blockers and unresolved contradictions. Every summary
+links to its topic and sources. Count distinct independent profiles with usable
+evidence, not repeated comments by one verifier.
+
+A compact swarm digest can derive from the same canonical inputs. Retrieval:
+
+```text
+0  swarm digest
+1  wiki/index.md
+2  relevant topic page
+3  ByteRover query
+4  raw evidence / source
+5  independent verification
+```
+
+Humans and workers may use wiki context/navigation. A builder can locate why a
+dependency is blocked; a verifier must inspect canonical state and live evidence.
+Wiki-only information cannot authorize completion, routing, mutation or a pass.
+Display input fingerprints, uncertainty and stale/unverified labels.
+
+### 5.2 Append-only history and `log.md`
+
+Log claim, verification, contradiction, reconciliation, decision, consequence and
+route publications alongside task/comment/run lifecycle records. Sort by UTC time
+and stable source-table/record-ID tie-breakers. Entries identify actor, topic and
+canonical source with source-derived anchors. Sequence-number anchors would
+break when late historical events arrive, so must not be used.
+
+Canonical history is append-only. The generated log is a rebuildable chronological
+projection, not a second journal. Corrections create linked new entries; old
+claims remain. Late records can be inserted chronologically on rebuild. This
+preserves audit history while keeping output disposable.
+
+Consecutive heartbeats for the same run may collapse in presentation, with count,
+first/last timestamps and retained source IDs. Canonical events remain intact.
 
 ### 5.3 Topic pages
 
-A topic is any of:
+Use architecture/claims/decisions/investigations types from §2. Stable IDs do not
+depend on display titles; filesystem slugs are safe and collision-resistant.
+Every page includes:
 
-- a task (`topics/task-<id>.md`),
-- a swarm request (`topics/request-<request_id>.md`, from the `hermes-swarm/v1`
-  envelope in `tasks.body`),
-- a ByteRover knowledge node or cluster (`topics/knowledge-<slug>.md`, from
-  context-tree files),
-- an emergent theme the compiler can extract deterministically — e.g., all
-  tasks that blocked with the same `block_kind`, or all comments referencing
-  the same request id.
+1. **Current synthesis and scope** with canonical summary revision, or an explicit
+   unsynthesized label, uncertainty and superseded views.
+2. **Claims** with exact source quotations and stable claim/legacy record IDs.
+3. **Provenance** for every assertion: author or unknown, time, canonical row/file,
+   revision and original evidence where available.
+4. **Linked work/knowledge**, distinguishing dependencies, source-task provenance
+   and topic cross-references.
+5. **Verification state**: verifier, verdict, scope, rationale, live evidence,
+   memory status/digest and time. Absence is `UNVERIFIED`; an unsupported pass
+   is `INVALID PASS`.
+6. **Contradictions**, both sides and sources, disposition and supported canonical
+   reconciliation if resolved.
+7. **Evidence references** to originals, source/test/runtime/commit and ByteRover
+   records. Unavailable references stay visible with findings, never invented links.
 
-Every topic page MUST carry these sections, all derived from canonical state:
+Quote/escape source Markdown and HTML, delimit multiline input and validate link
+schemes so untrusted prose cannot impersonate metadata, verification badges or
+rules. Preserve original bytes in raw artifacts; display escaping is not a change
+to original evidence.
 
-1. **Claims** — assertions found in canonical inputs: task objectives, run
-   summaries, comment assertions, ByteRover node summaries. Each claim is
-   quoted verbatim with a source pointer (table + row id, or file path).
-2. **Provenance** — for every claim: who authored it (`tasks.created_by`,
-   `task_comments.author`, node `createdAt`), when (`created_at`), and through
-   which canonical table/file it is recorded. Claims with unknown provenance
-   are still listed (never dropped) but marked UNPROVENANCED for the lint.
-3. **Linked tasks** — `task_links` edges both directions, plus `creator_task_id`
-   provenance links and envelope `source_task` references (the two distinct
-   link kinds the plugin itself distinguishes — `__init__.py:280-292`).
-4. **Verification state** — parsed `swarm_verify` commit comments on the task
-   chain: verdict (`pass/fail/inconclusive/blocked`), `live_evidence` list,
-   `memory_status`, `memory_digest`, verifier identity, recorded_at. A claim
-   with no verifying comment renders as `UNVERIFIED`. `pass` with empty
-   `live_evidence` cannot occur through the plugin (refused,
-   `__init__.py:382-385`) — if the compiler sees one in raw state it renders
-   it as `INVALID PASS` and the lint flags it.
-5. **Contradictions** — mechanical contradiction detection only (§6). Each
-   detected contradiction is rendered inline with both sides and sources.
-6. **Evidence references** — concrete pointers: commit SHAs found in
-   comment/result text (regex `[0-9a-f]{7,40}` with word boundaries), file
-   paths mentioned in envelopes (`acceptance`, `live_evidence`), pytest/exit
-   summaries quoted from `task_runs.summary`/`error`, and ByteRover node
-   paths. The compiler links, never invents: a reference it cannot resolve to
-   a canonical artifact is rendered as literal text plus a lint finding if
-   stale (§6).
+## 6. Periodic lint and contradiction semantics
 
-## 6. Wiki lint
+Lint audits canonical inputs and just-built output, both per-generation and via
+scheduled batch invocation. `swarm_lint` is a candidate later primitive, not
+an existing plugin tool. No daemon is required.
 
-`python ops/build_wiki.py --lint` runs after compilation and reports findings
-by class; findings set the exit code (audit-first, same posture as
-`ops/repair_kanban_status.py` exiting non-zero on invalid rows). Lint checks:
+| Finding | Required check |
+| --- | --- |
+| Missing provenance | Assertion lacks author, time or canonical source; retain visibly |
+| Insufficient sources | Single-source consequential claim, copied observations, non-independent identities |
+| Missing independent verification | No scoped pass/live evidence from a different authenticated profile |
+| Invalid verification | Unsupported pass, unknown identity, malformed record, scope mismatch |
+| Unresolved contradiction | Explicit conflict without supported reconciliation or mechanical state/verdict conflict |
+| Stale knowledge | Summary cites changed/superseded records, old scoped commit, missing/changed evidence |
+| Stale references | Absent commit/file/node, broken evidence pointer, hash mismatch |
+| Orphans / missing cross-links | Unindexed page, broken related link, knowledge with no work/topic connection |
+| Knowledge gaps | Explicit required topic/acceptance question lacks cited claim/evidence |
 
-1. **Unresolved contradictions** — two claims that mechanically contradict with
-   no later reconciliation on the same chain. Mechanical detection only:
-   (a) same task with terminal verdicts differing across comments;
-   (b) a task marked `done` while its latest swarm_verify comment says
-   `fail`/`blocked`; (c) two ByteRover nodes whose frontmatter `related`
-   points at each other but whose summaries assert opposite polarities of the
-   same keyword pair (deterministic keyword extraction from `keywords` +
-   `tags` frontmatter — no semantic NLP). The lint NEVER attempts open-ended
-   semantic contradiction discovery; anything subtler is human work.
-2. **Consequential claims lacking independent verification** — a claim is
-   consequential when it appears in an `evidence_required: true` envelope
-   (the plugin's own severity flag, `__init__.py:275`) or asserts a mutation
-   (commit SHA, file write, merge). It is independently verified only by a
-   `swarm_verify` commit with verdict `pass` AND non-empty `live_evidence`
-   from a different profile than the claim's author. Verifier identity comes
-   from the envelope's `verifier` field — trusted because `_identity()` reads
-   the runtime profile, never tool args (`__init__.py:59-62`, the #19713
-   anti-spoofing pattern).
-3. **Stale references** — evidence references that no longer resolve: commit
-   SHA not in the repo history (checked read-only via `git cat-file -e`),
-   file path not in the worktree, ByteRover node path missing from the tree.
-4. **Missing provenance** — any claim the compiler could not bind to
-   (author, timestamp, source row/file).
-5. **Orphan topics** — topic pages with no inbound link from index, log, or
-   any other topic; also ByteRover nodes never referenced by any task and
-   tasks never referenced by any log line (impossible by construction for
-   tasks — a task always emits at least a creation line — so in practice this
-   flags knowledge nodes with zero task cross-references, rendered on the
-   node's own page).
+Consequential means existing `evidence_required: true`, an explicit new-schema
+flag or a recorded mutation assertion. Independence derives from authenticated
+identity and target/scope links, never prose labeling a source independent.
+Legacy records missing those bindings cannot be upgraded automatically.
 
-Lint findings never block compilation (the wiki still builds; findings go to
-`lint-report.md` and stderr), but they DO set the process exit code, so cron
-or a human running the tool sees the audit state. The linter reads only
-canonical inputs + its own just-written output; it never reads the wiki as
-authority about the world (§8 applies to the linter too).
+Mechanical contradictions include differing terminal assessments for the same
+claim/scope and a `done` task whose latest applicable verification is
+`fail`/`blocked`. A later comment does not erase conflict; reconciliation
+links both sides, evidence, scope and disposition. Superseded claims stay in
+history. Opposite-polarity ByteRover summaries may produce candidate findings
+only under defined keyword/scope rules; open-ended semantic detection is not
+promised. Subtle contradictions need worker publication or human review.
 
-## 7. Reproducibility & disposability
+Check commits read-only in the identified repo, not inherited CWD. Distinguish
+missing commits from historical commits that exist but no longer support
+current-state claims. Prefer typed references; legacy extraction is labeled
+heuristic. Do not treat every hex token as a commit or every string as a path,
+fetch arbitrary URIs, execute evidence text or follow paths beyond allowed roots.
 
-Contract: **unchanged canonical input produces semantically identical output;
-deleted output rebuilds to the same projection.**
+Report class, severity, topic, canonical record and remediation target. Repair
+canonical evidence/knowledge or compiler rules, never generated text. Pin policy
+thresholds and exact exit codes in implementation tests.
 
-Rules the compiler must follow to honor it:
+## 7. Reproducibility, freshness and safety
 
-- Pure function: inputs = (board DB snapshot, context-tree files, repo HEAD
-  for reference resolution). No clock reads except one top-of-compile UTC
-  stamp rendered as `compiled_at:` in a single metadata block in `index.md`
-  and nothing else — or omitted entirely and rendered as the git commit date
-  when the output is committed. No random ids, no dict-order iteration
-  (sort everything; SQLite `ORDER BY` on every query), no locale-dependent
-  formatting (`datetime.utcfromtimestamp` + explicit `strftime`), no
-  filesystem-order `os.listdir` (sorted `Path.glob`).
-- `tasks.created_at` is `INTEGER` epoch seconds — render as UTC ISO-8601
-  (`docs/recovery.md` timestamps are UTC-stamped already, and
-  `ops/repair_kanban_status.py:74` uses UTC for its backup stamps, so UTC is
-  the house convention).
-- ByteRover nodes carry their own `createdAt`/`updatedAt` frontmatter — used
-  verbatim; the compiler adds no timestamps of its own to topic bodies.
-- Determinism gate: `--check` builds to a temp dir and byte-compares (after
-  the single `compiled_at` exemption) against the existing output. This is the
-  acceptance test for the compiler's own regression suite, and it is what
-  makes hand-edit detection (§4) fall out for free.
-- Disposable: nothing consumes the wiki. Deleting `wiki/` and re-running
-  yields the same bytes (modulo `compiled_at`). No migration, no format
-  versioning needed — format changes are just compiler commits; rebuild.
+Unchanged canonical input, rules and reference-resolution state produces identical
+bytes. The manifest records sorted input hashes, schema/rule/compiler versions,
+board/project identity and reference context. Omit wall-clock stamps; source times
+and fingerprints identify a generation. Use UTC, stable IDs and sorted traversal.
 
-## 8. Wiki text is derived untrusted data
+`--check` builds in a temporary directory and compares complete expected file
+sets/bytes, including unexpected/stale pages. It changes neither sources nor
+existing output. Normal publication removes obsolete generated pages only within
+owned output; unknown user files cause refusal, not silent deletion.
 
-The rule that governs every consumer, human or machine:
+Delete/rebuild `.swarm/wiki/` must reproduce output. Raw evidence deletion is
+never part of cleanup. Source/hash/schema failures cannot produce a falsely fresh
+manifest. Each page displays:
 
-- Kanban and ByteRover content is authored by automated workers. The wiki
-  renders that content verbatim inside claim blocks. Therefore every wiki page
-  is, from a security standpoint, a transcript of untrusted input.
-- No Hermes component may treat wiki text as instruction. Concretely: no
-  skill, no cron job, no worker prompt may include wiki pages as guidance;
-  no verification flow may cite the wiki as evidence (evidence is live:
-  `__init__.py:382-385`); no config is ever read from wiki content.
-- The wiki never renders instructions TO the swarm differently from other
-  content — there is no privileged "directive" section type. If a worker
-  wrote "ignore previous instructions" into a comment, it appears as a quoted
-  claim with provenance, exactly like every other string.
-- Prompt-injection surface is acknowledged, not solved: the wiki is for
-  humans. A human reading a page and being fooled by content is the threat
-  model; the mitigation is provenance-on-every-claim (§5.3.2) and the
-  verification-state section that shows which claims have independent
-  live-evidence backing.
+> Generated, untrusted projection. Kanban owns work state; ByteRover owns
+> knowledge; original records and evidence govern.
 
-## 9. Test baseline for this design (Phase 0 evidence)
+Generated-page access cannot broaden access to restricted evidence. Compile from
+an authorized source set into an equally authorized destination. Sharing/access
+integration is a deployment gate, not a property guaranteed by Markdown or Git.
 
-Recorded 2026-10-05 on the hsp board, run 2 of task t_981997dd:
+## 8. Implementation sequence and acceptance gates
 
-- Command per card:
-  `SWARM_PROTOCOL_PLUGIN_DIR="$PWD/hermes_swarm_protocol"
-  PYTHONPATH=/Users/raelldottin/.hermes/hermes-agent
-  /Users/raelldottin/.hermes/hermes-agent/venv/bin/python -m pytest tests/ -q`
-- Result inside this delegated-child worker context: `8 passed, 12 errors` —
-  all 12 errors are the same PermissionError at
-  `hermes_cli/kanban_db.py:150` ("delegate_task child contexts cannot mutate
-  Kanban tasks or boards"). Cause: the dispatcher pins
-  `HERMES_KANBAN_DB`/`HERMES_KANBAN_BOARD` in the child env; the test fixture
-  (`tests/test_swarm_protocol.py:30-46`) isolates via `HERMES_HOME=tmp_path`,
-  but the pinned board var overrides that isolation, so fixture board writes
-  hit the live-board fence, which correctly denies them. The repo's tests and
-  the fence are both behaving as designed; the pinned env is the artifact.
-- Result with the routing pins unset for the subprocess
-  (`env -u HERMES_KANBAN_DB -u HERMES_KANBAN_BOARD -u HERMES_KANBAN_WORKSPACE
-  -u HERMES_KANBAN_WORKSPACES_ROOT … pytest tests/ -q`):
-  **`20 passed in 4.67s`** — the expected baseline.
-- Implication for CI: a dispatcher-spawned or delegated worker that runs this
-  suite must strip the kanban routing env pins for the test subprocess (they
-  are routing config, not fixtures) — the fixture's `HERMES_HOME` isolation
-  then works as intended. This is worth a follow-up note in the repo's test
-  docs when the wiki compiler's own tests land, since they will use the same
-  fixture pattern.
+Implementation follows these gates. Current evidence is recorded in
+`swarm-wiki-implementation.md`; fixtures and the read-only real-source build
+establish compiler behavior. Applied source outcomes and live deployment are recorded in
+`swarm-wiki-delivery.md`; disclosed historical unknowns remain visible.
 
-## 10. Open design decisions (deferred to implementation cards)
+1. **Canonical publication/evidence:** finalize/version schema, store mapping,
+   authenticated identity, idempotency, ingestion and maintenance rules. Prove
+   concurrent publication, preserved corrections and existing-tool compatibility.
+2. **Read-only compiler:** implement snapshot readers, typed citations, topic
+   pages, overview/digest/index/log and manifest. Prove DB snapshot consistency,
+   tree replacement detection, schema failures and canonical/raw byte preservation.
+3. **Synthesis/reconciliation:** add authorized ByteRover maintenance, accumulated
+   topic updates, scoped reconciliation, decisions and consequence links. Show
+   strengthening, narrowing and supersession without inventing verification or
+   changing control-plane state.
+4. **Lint/publication:** cover every §6 class, locking, coherent generations, safe
+   paths/symlinks, escaping, stale-page cleanup, check mode and identical rebuilds.
+5. **Deployment/navigation:** demonstrate the retrieval ladder on a real project,
+   trace index claims to originals, validate access boundaries, document scheduled
+   lint and optional Git/Obsidian use.
 
-1. Do heartbeats enter log.md collapsed or behind a `--verbose` flag? (§5.2
-   currently says collapsed.)
-2. Should `--check`'s byte-comparison exempt only `compiled_at`, or should
-   the compiler accept `--stamp` to fix the stamp for CI runs? (Either
-   satisfies §7; `--stamp` makes the gate byte-exact.)
-3. Cross-board topics: the fleet has per-project boards (hsp is one). This
-   design compiles ONE board per invocation; a fleet-wide index would just be
-   a directory of per-board outputs. Confirmed as out of scope for v1.
-4. Whether `brv vc` history (context-tree git) becomes an evidence source —
-   deferred; v1 reads only the working tree files.
+Fixtures must cover opposing verdicts, self-verification, partial/narrowed scope,
+unsupported passes, unknown authors, malformed/duplicate events, late records,
+repeated heartbeats, historical but stale commits, changed hashes, broken links,
+injection prose, unknown output files and concurrent compilers. Prove no canonical
+mutation and no runtime wiki dependency. Formatting snapshots alone are inadequate.
 
-## Appendix A — Source-file anchors for every claim in this document
+No new server, daemon, network bus, authoritative wiki datastore, unrestricted
+worker Markdown writes or automatic publishing is required. Fleet-wide indexes
+and ByteRover version-control history ingestion are deferred beyond the first
+single-project implementation.
 
-- Plugin semantics, receipts, MEMORY_* states, live-evidence refusal, identity
-  anti-spoofing, no-edge provenance: `hermes_swarm_protocol/__init__.py`
-  (lines 16-17, 36-39, 47-62, 128, 254-300, 338-405, 433-460; file is 460
-  lines total, read in full).
-- Tool surface + version: `hermes_swarm_protocol/plugin.yaml` (v1.0.1,
-  provides_tools: swarm_request, swarm_verify, swarm_route).
-- Ownership map, install model (symlink, no daemon), test command:
-  `README.md` (lines 8-15, 44-97, 99-111).
-- Status-integrity triggers and evidence-gated repair:
-  `docs/kanban-worker-safety.md` (lines 23-71) and
-  `ops/repair_kanban_status.py` (audit-first default, `--apply` narrowness,
-  backup-before-mutation, `VALID_STATUSES`).
-- Fleet memory policy, tree paths, auto_extract gating, brv query latency:
-  `docs/recovery.md` (lines 7-33, 93-101) and `ops/migrate_fleet_memory.py`
-  (lines 30-71: machine-global root, PROJECT_MEMORY, audit/apply modes).
-- Kanban schema: live `.schema` dump of the hsp board (tasks, task_links,
-  task_comments, task_events, task_runs) captured 2026-10-05; row counts at
-  capture: 1 task, 0 links, 0 comments, 121 events, 2 runs.
-- ByteRover tree format: live reads of
-  `~/.hermes/byterover-projects/opnory/.brv/context-tree/**` (node frontmatter
-  fields, summary nodes, `_index.md`) and this project's fresh tree
-  (`~/.hermes/byterover-projects/hermes-swarm-protocol/.brv/`, created
-  2026-10-05T23:41:42Z, empty).
-- Test baseline: live pytest runs, §9.
+## 9. Current grounding and review evidence
+
+Repository grounding:
+
+- `README.md`: Kanban work state, ByteRover knowledge, worker authors,
+  coordinator roles and request/verify/route semantics.
+- `hermes_swarm_protocol/plugin.yaml` v1.2.0: request, verify, route, publish and capture.
+- `hermes_swarm_protocol/__init__.py`: runtime identity, request task bodies,
+  verification comment envelopes, memory outcomes, live-evidence pass requirement
+  and request provenance without a dependency edge.
+- `ops/migrate_fleet_memory.py` / `docs/recovery.md`: project knowledge trees
+  and machine-global root independent of worker `HERMES_HOME`.
+- `ops/repair_kanban_status.py` / `docs/kanban-worker-safety.md`: audit-first
+  operational conventions and status-integrity boundaries.
+
+This revision inspected hsp schema read-only: all five input tables exist; the
+project tree contains 11 Markdown nodes. These are inspection observations, not
+compiler acceptance. Validate required columns at implementation time, tolerate
+additive Hermes schema changes, and do not freeze a dated full schema dump.
+
+Pre-implementation baseline: **20 passed** using the Hermes virtualenv and this checkout's
+plugin, with Kanban routing pins removed only in the isolated test subprocess.
+From repository root:
+
+```bash
+env -u HERMES_KANBAN_DB -u HERMES_KANBAN_BOARD \
+  -u HERMES_KANBAN_WORKSPACE -u HERMES_KANBAN_WORKSPACES_ROOT \
+  -u HERMES_KANBAN_TASK \
+  SWARM_PROTOCOL_PLUGIN_DIR="$PWD/hermes_swarm_protocol" \
+  PYTHONPATH=/Users/raelldottin/.hermes/hermes-agent \
+  /Users/raelldottin/.hermes/hermes-agent/venv/bin/python -m pytest tests/ -q
+```
+
+The extended suite also covers wiki compiler/publication behavior; see the QA
+record for the final result. Removing subprocess routing pins lets fixtures avoid
+a live dispatcher board.
+
+Task-supplied inspirations (not evidence of shipped repository features):
+
+- [Collusion](https://collusion.wiki/): durable shared surfaces and discovery.
+- [Karpathy's LLM Wiki idea](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f):
+  immutable sources, maintained synthesis, rules, index/log and lint.
+- [Hermes memory providers](https://hermes-agent.nousresearch.com/docs/user-guide/features/memory-providers/)
+  and [ByteRover](https://www.byterover.dev/): retrieval and sharing.
+
+Verify current external APIs and deployment-specific access behavior when
+implementing adapters.

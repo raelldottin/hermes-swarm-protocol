@@ -1,4 +1,4 @@
-"""swarm-protocol — coordination semantics over Kanban + ByteRover. No new storage.
+"""swarm-protocol — coordination over Kanban + ByteRover; disposable wiki projection.
 
 Design contract (verified against tools/kanban_tools.py + hermes_cli/kanban_db.py):
 
@@ -13,7 +13,8 @@ Identity: author/creator names come from hermes_cli.profiles.current_profile_nam
 same source kanban_tools._persisted_identity() uses — never from tool args (anti-spoofing,
 mirrors the #19713 comment-authorship guard).
 
-Storage: none. Requests are Kanban cards; verification outcomes are comments + review state.
+Coordination storage: existing Kanban cards/comments. Wiki publications are comments;
+raw captures are immutable evidence files. Generated wiki output is non-authoritative.
 """
 
 from __future__ import annotations
@@ -164,6 +165,38 @@ def _patch_byterover_curate_timeout() -> bool:
         return True
     except Exception:
         logger.exception("swarm-protocol could not patch ByteRover curate timeout")
+        return False
+
+
+def _patch_byterover_curate_response() -> bool:
+    """Reject an observed CLI parse failure even when ByteRover exits zero."""
+    if _active_memory_provider() != "byterover":
+        return False
+    try:
+        from functools import wraps
+        from plugins.memory import byterover as brv
+        provider = getattr(brv, "ByteRoverMemoryProvider", None)
+        original = getattr(provider, "_curate", None)
+        if not callable(original) or getattr(original, "_swarm_response_guard", False):
+            return False
+
+        @wraps(original)
+        def curate(self, content):
+            result = original(self, content)
+            output = result.get("output") if isinstance(result, dict) else None
+            if isinstance(output, str) and result.get("success") and any(
+                line.strip().startswith("Response parsing failed:") or line.strip() == "Not Found"
+                for line in output.splitlines()
+            ):
+                return {**result, "success": False,
+                        "error": "ByteRover curate reported a provider or response parsing failure despite a zero exit status"}
+            return result
+
+        curate._swarm_response_guard = True
+        provider._curate = curate
+        return True
+    except Exception:
+        logger.exception("swarm-protocol could not guard ByteRover curate responses")
         return False
 
 
@@ -520,6 +553,290 @@ def swarm_route(args: dict, **kwargs) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Wiki publications: canonical comments and immutable evidence, never wiki edits
+# ---------------------------------------------------------------------------
+
+def _wiki_records():
+    # User-plugin loaders and the existing tests load __init__.py under arbitrary
+    # module names; do not depend on a package-relative import being available.
+    import importlib.util
+    import sys
+    source = Path(__file__).resolve().with_name("wiki_records.py")
+    name = "_hermes_swarm_wiki_records_" + hashlib.sha256(str(source).encode() + source.read_bytes()).hexdigest()[:16]
+    if name not in sys.modules:
+        spec = importlib.util.spec_from_file_location(name, source)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        sys.modules[name] = module
+    return sys.modules[name]
+
+
+def _wiki_configuration(args):
+    project = args.get("project")
+    if not isinstance(project, str) or Path(project).name != project or project in {"", ".", ".."} or "\\" in project:
+        raise ValueError("project must be a path-safe name")
+    cfg = (_plugin_settings().get("wiki_projects") or {}).get(project)
+    actor = _identity()
+    if not isinstance(cfg, dict) or not cfg.get("workspace") or not cfg.get("knowledge_tree"):
+        raise ValueError("configure wiki_projects.<project>.workspace and knowledge_tree first")
+    if actor not in set(cfg.get("profiles", [])) | set(cfg.get("maintainers", [])):
+        raise ValueError("runtime profile is not an authorized project publisher")
+    if args.get("board") and args["board"] != cfg.get("board"):
+        raise ValueError("project board mismatch")
+    return cfg, actor
+
+
+def _wiki_context(args, kb, conn):
+    cfg, actor = _wiki_configuration(args)
+    runtime_task = os.environ.get("HERMES_KANBAN_TASK")
+    task_id = args.get("task_id") or runtime_task
+    if not task_id or (runtime_task and runtime_task != task_id):
+        raise ValueError("publication must bind the runtime task")
+    task = conn.execute("SELECT workspace_path FROM tasks WHERE id=?", (task_id,)).fetchone()
+    if not task or not task[0]:
+        raise ValueError("publication requires a task with an explicit workspace")
+    workspace = Path(cfg["workspace"]).expanduser()
+    if workspace.is_symlink() or not workspace.is_dir():
+        raise ValueError("configured workspace must exist without a root symlink")
+    workspace = workspace.resolve()
+    task_workspace = Path(task[0])
+    if task_workspace.is_symlink():
+        raise ValueError("task workspace cannot be a symlink")
+    task_workspace = task_workspace.resolve()
+    allowed = [workspace] + [Path(p).expanduser().resolve() for p in cfg.get("task_workspaces", [])]
+    if not any(task_workspace.is_relative_to(root) for root in allowed):
+        raise ValueError("task is outside configured project workspace")
+    records = _wiki_records()
+    rules = records.confined(workspace, ".swarm/SWARM_WIKI.md")
+    if not rules.is_file():
+        raise ValueError("install trusted .swarm/SWARM_WIKI.md maintenance rules first")
+    cfg = dict(cfg, workspace=workspace, task_workspace=task_workspace, knowledge_tree=Path(cfg["knowledge_tree"]).expanduser())
+    if cfg["knowledge_tree"].is_symlink() or not cfg["knowledge_tree"].is_dir():
+        raise ValueError("configured knowledge tree must exist without a root symlink")
+    return cfg, actor, task_id
+
+
+def _wiki_validate(data, kind, topic, cfg, actor, conn):
+    records = _wiki_records()
+    existing = {}
+    for row in conn.execute("SELECT id, task_id, author, body, created_at FROM task_comments ORDER BY id"):
+        try:
+            event = records.decode_record(dict(zip(("id", "task_id", "author", "body", "created_at"), row)))
+        except (ValueError, KeyError, TypeError):
+            continue
+        if event:
+            existing[event["event_id"]] = event
+    superseded = set()
+    for event in existing.values():
+        prior = existing.get(event["data"].get("supersedes"))
+        if prior and prior["type"] == event["type"] and prior["topic"] == event["topic"] and prior["project"] == event["project"]:
+            if prior["actor"] == event["actor"] or event["actor"] in cfg.get("maintainers", []):
+                superseded.add(prior["event_id"])
+    evidence = data["evidence"] + data.get("live_evidence", [])
+    if kind == "artifact":
+        evidence += [data["capture"]]
+    def validate_ref(ref, workspace):
+        if ref["kind"] in {"artifact", "file", "knowledge"}:
+            root = cfg["workspace"] / ".swarm/raw" if ref["kind"] == "artifact" else cfg["knowledge_tree"] if ref["kind"] == "knowledge" else workspace
+            path = records.confined(root, ref["path"])
+            if not path.is_file() or records.file_hash(root, ref["path"]) != ref["sha256"]:
+                raise ValueError("missing or changed evidence reference")
+        elif ref["kind"] == "record":
+            event = existing.get(ref["event_id"])
+            if not event or event["project"] != cfg["project"] or event["payload_digest"] != ref["digest"]:
+                raise ValueError("missing or changed source record")
+        elif ref["kind"] == "commit":
+            import subprocess
+            result = subprocess.run(["git", "-C", str(cfg.get("repo", cfg["workspace"])), "cat-file", "-e", ref["sha"] + "^{commit}"], capture_output=True, timeout=10)
+            if result.returncode:
+                raise ValueError("commit evidence is unavailable in configured repo")
+    def source_workspace(event):
+        workspace = Path(event.get("workspace", cfg["workspace"]))
+        if workspace.is_symlink():
+            raise ValueError("source workspace cannot be a symlink")
+        workspace = workspace.resolve()
+        roots = [cfg["workspace"]] + [Path(p).expanduser().resolve() for p in cfg.get("task_workspaces", [])]
+        if not any(workspace.is_relative_to(root) for root in roots):
+            raise ValueError("source workspace outside configured roots")
+        return workspace
+
+    def usable(event):
+        if event["event_id"] in superseded:
+            return False
+        workspace = source_workspace(event)
+        for ref in event["data"].get("live_evidence", []):
+            if records.live_reference(ref, workspace, cfg["knowledge_tree"], existing):
+                try:
+                    validate_ref(ref, workspace)
+                    return True
+                except (ValueError, OSError):
+                    continue
+        return False
+
+    for ref in evidence:
+        validate_ref(ref, cfg["task_workspace"])
+    if kind in records.AUDIT_TYPES:
+        if not cfg.get("board"):
+            raise ValueError("audit publications require an explicitly configured board")
+        tables = records.audit_tables(conn)
+        knowledge = {}
+        paths = [data["subject"]["path"]] if kind == "provenance" and data["subject"]["kind"] == "knowledge" else []
+        paths += [r["path"] for r in data.get("parent_revisions", [])]
+        for path in paths:
+            knowledge[path] = records.read_confined(cfg["knowledge_tree"], path)
+        def available(ref, _):
+            try:
+                validate_ref(ref, cfg["task_workspace"])
+                return True
+            except (ValueError, OSError):
+                return False
+        def live(ref, event_id):
+            return records.live_reference(ref, cfg["task_workspace"], cfg["knowledge_tree"], existing) and available(ref, event_id)
+        records.validate_audit_record(
+            {"type": kind, "data": data, "actor": actor}, tables, knowledge,
+            cfg["board"], cfg.get("maintainers", []), available, live,
+            [e for i, e in existing.items() if i not in superseded and e["project"] == cfg["project"]])
+    links = data.get("claims", []) + data.get("supporting_records", [])
+    links += [data[k] for k in ("claim_id", "contradiction_id", "supersedes") if k in data]
+    for link in links:
+        event = existing.get(link)
+        if not event or event["project"] != cfg["project"] or event["topic"] != topic:
+            raise ValueError("linked record missing or outside project/topic")
+    if data.get("supersedes"):
+        prior = existing[data["supersedes"]]
+        if prior["type"] != kind or (prior["actor"] != actor and actor not in cfg.get("maintainers", [])):
+            raise ValueError("supersession requires the same type and original author or maintainer")
+    if kind == "verification":
+        claim = existing[data["claim_id"]]
+        if claim["type"] != "claim":
+            raise ValueError("verification target must be a claim")
+        if data["verdict"] == "pass" and (claim["actor"] == actor or claim["data"]["scope"] != data["scope"]):
+            raise ValueError("pass requires a different profile and the original claim scope")
+        if data["verdict"] == "pass" and not any(records.live_reference(r, cfg["task_workspace"], cfg["knowledge_tree"], existing) for r in data["live_evidence"]):
+            raise ValueError("memory/wiki captures cannot supply sole live evidence")
+    if kind == "contradiction" and any(existing[i]["type"] != "claim" for i in data["claims"]):
+        raise ValueError("contradiction targets must be claims")
+    if kind == "reconciliation":
+        conflict = existing[data["contradiction_id"]]
+        if conflict["type"] != "contradiction":
+            raise ValueError("reconciliation target must be a contradiction")
+        authors = {existing[i]["actor"] for i in conflict["data"]["claims"]}
+        if not any(existing[i]["type"] == "verification" and existing[i]["actor"] not in authors
+                   and existing[i]["data"]["claim_id"] in conflict["data"]["claims"]
+                   and existing[i]["data"]["scope"] == data["scope"]
+                   and existing[i]["data"]["verdict"] in {"pass", "fail", "partial"}
+                   and usable(existing[i])
+                   for i in data["supporting_records"]):
+            raise ValueError("reconciliation requires independent scoped live evidence")
+    for task_id in data.get("affected_task_ids", []):
+        if conn.execute("SELECT 1 FROM tasks WHERE id=?", (task_id,)).fetchone() is None:
+            raise ValueError("affected task missing")
+    if kind == "route":
+        target = ((_plugin_settings().get("projects") or {}).get(cfg["project"]) or {}).get(data["role"])
+        if data["outcome"] != ("ROUTE_RESOLVED" if target else "ROUTE_UNRESOLVED") or (target and data.get("target_profile") != target):
+            raise ValueError("route publication must match current configured routing")
+    if kind == "synthesis":
+        if actor not in cfg.get("maintainers", []):
+            raise ValueError("only configured maintainers can accept synthesis")
+        path = records.confined(cfg["knowledge_tree"], data["node_path"])
+        if not path.is_file() or records.file_hash(cfg["knowledge_tree"], data["node_path"]) != data["node_sha256"]:
+            raise ValueError("accepted ByteRover node revision is missing or changed")
+        sources = {i: e["payload_digest"] for i, e in existing.items()
+                   if e["project"] == cfg["project"] and e["topic"] == topic and e["type"] != "synthesis"}
+        sources = {i: h for i, h in sources.items() if i not in superseded}
+        if data["source_digests"] != sources:
+            raise ValueError("synthesis must cite every active publication for this topic")
+        for event_id in sources:
+            event = existing[event_id]
+            workspace = source_workspace(event)
+            refs = event["data"]["evidence"] + event["data"].get("live_evidence", [])
+            if event["type"] == "artifact":
+                refs += [event["data"]["capture"]]
+            for ref in refs:
+                validate_ref(ref, workspace)
+
+
+SWARM_PUBLISH_SCHEMA = {
+    "name": "swarm_publish",
+    "description": "Publish a structured claim, scoped verification, contradiction, reconciliation, decision, consequence, route or accepted ByteRover synthesis as a canonical Kanban comment. Never edits wiki pages. Identity comes from runtime; use a stable publication_key for retries.",
+    "parameters": {"type": "object", "properties": {
+        "project": {"type": "string"}, "topic": {"type": "string"},
+        "type": {"type": "string", "enum": ["claim", "verification", "contradiction", "reconciliation", "decision", "consequence", "route", "synthesis", "provenance", "request_assessment"]},
+        "publication_key": {"type": "string"}, "data": {"type": "object"},
+        "task_id": {"type": "string"}, "board": {"type": "string"}},
+        "required": ["project", "topic", "type", "publication_key", "data"]},
+}
+
+
+def swarm_publish(args: dict, **kwargs) -> str:
+    try:
+        records = _wiki_records()
+        if args.get("type") == "artifact":
+            raise ValueError("use swarm_capture for raw provenance")
+        project = args.get("project")
+        configured, _ = _wiki_configuration(args)
+        records.payload(args.get("type"), args.get("data"))
+        with _board(args.get("board") or configured.get("board")) as (kb, conn):
+            cfg, actor, task_id = _wiki_context(args, kb, conn)
+            cfg["project"] = project
+            record = records.make_record(project, task_id, actor, args.get("publication_key"),
+                                         args.get("topic"), args.get("type"), args.get("data"), int(time.time()), str(cfg["task_workspace"]))
+            event, comment_id, duplicate = records.append_record(
+                conn, kb.add_comment, record,
+                validate=lambda: _wiki_validate(record["data"], record["type"], record["topic"], cfg, actor, conn))
+            return _ok(event_id=event["event_id"], payload_digest=event["payload_digest"], comment_id=comment_id,
+                       recorded_on=task_id, duplicate=duplicate)
+    except Exception as error:
+        return _reject(f"swarm_publish failed: {error}")
+
+
+SWARM_CAPTURE_SCHEMA = {
+    "name": "swarm_capture",
+    "description": "Capture an original task workspace or configured knowledge file as immutable content-addressed raw evidence in shared project storage and publish its provenance. Memory snapshots are context, never sole live proof.",
+    "parameters": {"type": "object", "properties": {
+        "project": {"type": "string"}, "topic": {"type": "string"},
+        "publication_key": {"type": "string"}, "source_path": {"type": "string"},
+        "source_kind": {"type": "string", "enum": ["workspace", "knowledge"], "default": "workspace"},
+        "category": {"type": "string", "enum": ["evidence", "test-results", "source-snapshots"]},
+        "media_type": {"type": "string"}, "task_id": {"type": "string"}, "board": {"type": "string"}},
+        "required": ["project", "topic", "publication_key", "source_path", "category"]},
+}
+
+
+def swarm_capture(args: dict, **kwargs) -> str:
+    try:
+        records = _wiki_records()
+        project = args.get("project")
+        configured, _ = _wiki_configuration(args)
+        with _board(args.get("board") or configured.get("board")) as (kb, conn):
+            cfg, actor, task_id = _wiki_context(args, kb, conn)
+            cfg["project"] = project
+            # Validate all user text before creating an immutable artifact.
+            for key in ("publication_key", "topic", "source_path"):
+                records.text(args.get(key), key)
+            records.payload("artifact", {"capture": {"kind": "artifact", "path": "evidence/preflight", "sha256": "0" * 64},
+                                         "media_type": args.get("media_type") or "application/octet-stream",
+                                         "source_path": args["source_path"]})
+            source_kind = args.get("source_kind", "workspace")
+            if source_kind not in {"workspace", "knowledge"}:
+                raise ValueError("source_kind must be workspace or knowledge")
+            source_root = cfg["knowledge_tree"] if source_kind == "knowledge" else cfg["task_workspace"]
+            ref = records.capture(cfg["workspace"], args["source_path"], args["category"], source_root=source_root)
+            source_origin = "knowledge" if source_kind == "knowledge" else records.origin(source_root, cfg["knowledge_tree"], args["source_path"])
+            record = records.make_record(project, task_id, actor, args["publication_key"], args["topic"],
+                                         "artifact", {"capture": ref, "media_type": args.get("media_type") or "application/octet-stream",
+                                                      "source_path": args["source_path"], "source_root": str(source_root),
+                                                      "source_origin": source_origin}, int(time.time()), str(cfg["task_workspace"]))
+            event, comment_id, duplicate = records.append_record(
+                conn, kb.add_comment, record,
+                validate=lambda: _wiki_validate(record["data"], "artifact", record["topic"], cfg, actor, conn))
+            return _ok(event_id=event["event_id"], payload_digest=event["payload_digest"], evidence=ref,
+                       comment_id=comment_id, duplicate=duplicate)
+    except Exception as error:
+        return _reject(f"swarm_capture failed: {error}")
+
+
+# ---------------------------------------------------------------------------
 # Registration
 # ---------------------------------------------------------------------------
 
@@ -528,6 +845,7 @@ def register(ctx) -> None:
     # ByteRover's own agentic task budget can run for ~10 minutes. Raise the floor
     # before any explicit or automatic curate runs in this process.
     _patch_byterover_curate_timeout()
+    _patch_byterover_curate_response()
 
     # Defense-in-depth guard: current Hermes already injects dispatcher worker
     # lifecycle tools. A dispatcher-owned worker persists the board-level status
@@ -537,3 +855,5 @@ def register(ctx) -> None:
     ctx.register_tool(name="swarm_request", toolset="swarm", schema=SWARM_REQUEST_SCHEMA, handler=swarm_request)
     ctx.register_tool(name="swarm_verify", toolset="swarm", schema=SWARM_VERIFY_SCHEMA, handler=swarm_verify)
     ctx.register_tool(name="swarm_route", toolset="swarm", schema=SWARM_ROUTE_SCHEMA, handler=swarm_route)
+    ctx.register_tool(name="swarm_publish", toolset="swarm", schema=SWARM_PUBLISH_SCHEMA, handler=swarm_publish)
+    ctx.register_tool(name="swarm_capture", toolset="swarm", schema=SWARM_CAPTURE_SCHEMA, handler=swarm_capture)

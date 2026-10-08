@@ -1,8 +1,11 @@
 name: swarm-protocol
-version: 1.0.2
-description: "Swarm coordination semantics over Hermes Kanban + ByteRover, including a ByteRover curate-timeout compatibility floor and defense-in-depth protection against off-enum Kanban task statuses (NousResearch/hermes-agent#129021). No new protocol storage — Kanban cards and comments remain the durable state."
+version: 1.2.0
+kind: standalone
+description: "Swarm coordination semantics over Hermes Kanban + ByteRover, with defense-in-depth protection against off-enum Kanban task statuses (NousResearch/hermes-agent#129021). No new protocol storage — Kanban cards and comments remain the durable state."
 author: fleet
 provides_tools:
   - swarm_request
   - swarm_verify
   - swarm_route
+  - swarm_publish
+  - swarm_capture
