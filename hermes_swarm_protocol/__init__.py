@@ -40,6 +40,14 @@ MEMORY_ERROR = "MEMORY_ERROR"
 
 VERDICTS = ("pass", "fail", "inconclusive", "blocked")
 
+# Hermes currently caps every ByteRover curate at 120s while ByteRover's own
+# agentic task budget can run for ~10 minutes. Raise the Hermes-side floor so a
+# healthy curate is not killed before ByteRover's own budget expires. This is
+# deliberately monotonic: a future Hermes release with a larger timeout wins.
+_DEFAULT_BRV_CURATE_TIMEOUT_SECONDS = 660
+_MIN_BRV_CURATE_TIMEOUT_SECONDS = 120
+_MAX_BRV_CURATE_TIMEOUT_SECONDS = 7200
+
 # In-process receipts for two-stage verification: verification_id -> {request_id, issued_at,
 # memory_status, digest}. Short-lived by construction (process-scoped); the durable record is
 # the Kanban comment the commit phase writes. A restarted worker must re-inspect — that is the
@@ -91,6 +99,72 @@ def _plugin_settings() -> Dict[str, Any]:
         return dict((entry or {}).get("settings") or {})
     except Exception:
         return {}
+
+
+def _active_memory_provider() -> str:
+    """Return the configured external memory provider name, or an empty string."""
+    try:
+        from hermes_cli.config import load_config
+        memory = (load_config() or {}).get("memory") or {}
+        return str(memory.get("provider") or "").strip() if isinstance(memory, dict) else ""
+    except Exception:
+        return ""
+
+
+def _configured_brv_curate_timeout() -> int:
+    """Resolve the swarm ByteRover curate timeout floor from plugin settings."""
+    raw = _plugin_settings().get(
+        "byterover_curate_timeout_seconds", _DEFAULT_BRV_CURATE_TIMEOUT_SECONDS
+    )
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "swarm-protocol invalid byterover_curate_timeout_seconds=%r; using %ss",
+            raw,
+            _DEFAULT_BRV_CURATE_TIMEOUT_SECONDS,
+        )
+        value = _DEFAULT_BRV_CURATE_TIMEOUT_SECONDS
+    return max(_MIN_BRV_CURATE_TIMEOUT_SECONDS, min(value, _MAX_BRV_CURATE_TIMEOUT_SECONDS))
+
+
+def _patch_byterover_curate_timeout() -> bool:
+    """Raise Hermes' process-wide ByteRover curate timeout floor when ByteRover is active.
+
+    Hermes' bundled ByteRover provider reads its module-level curate timeout each time
+    ByteRoverMemoryProvider._curate runs. Updating that module global therefore covers
+    explicit brv_curate calls and automatic/background curations without replacing the
+    provider or changing its storage topology.
+
+    The patch only raises the value. A future upstream Hermes fix remains authoritative,
+    and multiplexed profiles cannot shorten another profile's deadline.
+    """
+    if _active_memory_provider() != "byterover":
+        return False
+    try:
+        from plugins.memory import byterover as brv
+
+        current = getattr(brv, "_CURATE_TIMEOUT", None)
+        if not isinstance(current, (int, float)):
+            logger.warning(
+                "swarm-protocol could not patch ByteRover curate timeout: "
+                "plugins.memory.byterover._CURATE_TIMEOUT is unavailable"
+            )
+            return False
+
+        requested = _configured_brv_curate_timeout()
+        effective = max(int(current), requested)
+        if effective != current:
+            brv._CURATE_TIMEOUT = effective
+            logger.info(
+                "swarm-protocol raised ByteRover curate timeout from %ss to %ss",
+                current,
+                effective,
+            )
+        return True
+    except Exception:
+        logger.exception("swarm-protocol could not patch ByteRover curate timeout")
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -450,6 +524,11 @@ def swarm_route(args: dict, **kwargs) -> str:
 # ---------------------------------------------------------------------------
 
 def register(ctx) -> None:
+    # ByteRover compatibility: Hermes currently hard-caps curate at 120s even though
+    # ByteRover's own agentic task budget can run for ~10 minutes. Raise the floor
+    # before any explicit or automatic curate runs in this process.
+    _patch_byterover_curate_timeout()
+
     # Defense-in-depth guard: current Hermes already injects dispatcher worker
     # lifecycle tools. A dispatcher-owned worker persists the board-level status
     # constraint before model work begins.
