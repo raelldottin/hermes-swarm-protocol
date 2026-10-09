@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import collections
+import base64
 import contextlib
 import datetime as dt
 import fcntl
@@ -29,13 +30,38 @@ REQUIRED = {
 }
 
 
+def source_text(value):
+    if isinstance(value, bytes):
+        return "SQLite BLOB: " + str(len(value)) + " bytes; sha256=" + records.byte_hash(value) + "; binary source, not interpreted as text"
+    return str(value)
+
+
+def board_snapshot_values(value):
+    """Lossless typed SQLite BLOB encoding; text-only snapshots stay identical.
+
+    SQLite scalar cells cannot contain mappings, so this tag cannot collide with
+    a TEXT cell. Keep raw snapshot bytes unchanged and encode only for hashing.
+    """
+    if isinstance(value, bytes):
+        return {"$sqlite_blob": {"encoding": "base64", "data": base64.b64encode(value).decode("ascii")}}
+    if isinstance(value, dict):
+        return {key: board_snapshot_values(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [board_snapshot_values(item) for item in value]
+    return value
+
+
+def board_snapshot_digest(tables):
+    return records.digest(board_snapshot_values(tables))
+
+
 def esc(value):
-    value = html.escape(" ".join(str(value).splitlines()), quote=True)
+    value = html.escape(" ".join(source_text(value).splitlines()), quote=True)
     return re.sub(r"([\\`*_{}\[\]()#!|])", r"\\\1", value)
 
 
 def quote(value):
-    return "\n".join("> " + esc(line) for line in str(value).splitlines()) or "> (empty)"
+    return "\n".join("> " + esc(line) for line in source_text(value).splitlines()) or "> (empty)"
 
 
 def utc(value):
@@ -364,6 +390,44 @@ class Projection:
             return None
         return candidates[-1] if candidates else None
 
+    def synthesis_chain_contains(self, current, target):
+        """Validate the entire author-bound predecessor chain before retiring history."""
+        ancestors, visited = set(), {current["event_id"]}
+        while current["data"].get("supersedes"):
+            prior_id = current["data"]["supersedes"]
+            prior = self.events.get(prior_id)
+            if (not prior or prior_id in visited or prior_id not in self.superseded
+                    or any(prior[key] != current[key] for key in ("type", "topic", "project", "actor"))):
+                return False
+            visited.add(prior_id)
+            ancestors.add(prior_id)
+            current = prior
+        return target in ancestors
+
+    def synthesis_history_successor(self, finding):
+        """Retire obsolete node revisions, never lost original evidence or task links."""
+        prior = self.events.get(finding["target"])
+        if not prior or prior["type"] != "synthesis":
+            return None
+        if finding["class"] == "stale-reference":
+            try:
+                ref = json.loads(finding["message"])
+            except (ValueError, TypeError):
+                return None
+            if (not isinstance(ref, dict) or ref.get("kind") != "knowledge"
+                    or ref.get("path") != prior["data"]["node_path"]
+                    or ref.get("sha256") != prior["data"]["node_sha256"]):
+                return None
+        elif finding["class"] != "stale-knowledge":
+            return None
+        for event in reversed(self.ordered("synthesis")):
+            if (event["event_id"] not in self.superseded and self.accepted(event)
+                    and all(self.reference(ref, event["event_id"]) for ref in self.event_evidence(event))
+                    and all(tid in self.tasks for tid in event["data"].get("affected_task_ids", []))
+                    and self.synthesis_chain_contains(event, prior["event_id"])):
+                return event
+        return None
+
     def finding_outcomes(self):
         for finding in self.findings:
             outcome, correction = "unresolved", None
@@ -382,6 +446,9 @@ class Projection:
             elif kind in {"missing-independent-verification", "knowledge-gap"} and target in self.tasks:
                 correction = self.request_assessment(target)
                 outcome = "verified" if correction else outcome
+            elif kind in {"stale-knowledge", "stale-reference"} and target in self.superseded:
+                correction = self.synthesis_history_successor(finding)
+                outcome = "superseded_history" if correction else outcome
             elif kind == "invalid-audit-record" and target in self.superseded:
                 # A valid current successor may retire a stale annotation, while
                 # both source-bound records remain in the immutable history.
@@ -436,7 +503,7 @@ class Projection:
                     self.finding("stale-reference", event_id, "Affected task missing: " + tid)
         for table in ("tasks", "task_comments", "task_runs"):
             for row in self.inputs["tables"][table]:
-                prose = "\n".join(str(row.get(k) or "") for k in ("result", "body", "summary", "error"))
+                prose = "\n".join(source_text(row.get(k) or "") for k in ("result", "body", "summary", "error"))
                 for sha in re.findall(r"\bcommit\s*[:=]\s*([0-9a-f]{7,40})\b", prose):
                     self.reference({"kind": "commit", "sha": sha, "scope": "historical"}, "legacy-heuristic:" + source(table, row))
         for claim in self.ordered("claim"):
@@ -632,7 +699,7 @@ class Projection:
                 summary = d.get("assertion", d.get("conclusion", d.get("impact", d.get("explanation", d.get("rationale", publication["topic"])))))
                 add("task_comments", row, row["created_at"], publication["type"], summary)
             else:
-                add("task_comments", row, row["created_at"], "comment", (row.get("author") or "UNKNOWN_AUTHOR") + ": " + (row.get("body") or ""))
+                add("task_comments", row, row["created_at"], "comment", source_text(row.get("author") or "UNKNOWN_AUTHOR") + ": " + source_text(row.get("body") or ""))
         for row in tables["task_events"]:
             add("task_events", row, row["created_at"], row["kind"], row.get("payload") or "")
         for row in tables["task_runs"]:
@@ -653,7 +720,7 @@ class Projection:
                         break
                     group.append(other)
             body += "\n" + "\n".join('<a id="' + e["anchor"] + '"></a>' for e in group) + "\n\n"
-            summary = " ".join(str(entry["text"]).split())[:160]
+            summary = " ".join(source_text(entry["text"]).split())[:160]
             if len(group) > 1:
                 summary = str(len(group)) + " heartbeats; first " + utc(entry["time"]) + "; last " + utc(group[-1]["time"])
             body += "- " + utc(entry["time"]) + " · " + esc(entry["kind"]) + " · " + esc(entry["actor"]) + " · "
@@ -719,7 +786,7 @@ class Projection:
                 body += "\n" + quote(records.canonical(verdict)) + "\n\n" + esc(source("task_comments", row)) + "; " + esc(row["author"]) + "; " + utc(row["created_at"]) + "\n"
             body += "\n## Contradictions\n\n" + self.link("Audit findings", "lint-report.md", True) + "\n\n## Evidence references\n\n" + self.link("Task creation / history", "log.md#" + anchor("tasks", tid, "created"), True) + "\n"
             for row in self.inputs["tables"]["task_comments"]:
-                if row["task_id"] == tid and not (row.get("body") or "").startswith(records.PREFIX):
+                if row["task_id"] == tid and (not isinstance(row.get("body"), str) or not (row.get("body") or "").startswith(records.PREFIX)):
                     body += "\n" + quote(row.get("body") or "") + "\n\n" + esc(source("task_comments", row)) + "; " + esc(row.get("author") or "UNKNOWN_AUTHOR") + "; " + utc(row["created_at"]) + "\n"
             files[self.task_path(tid)] = body
         for name, (meta, content) in sorted(self.nodes.items()):
@@ -748,7 +815,7 @@ class Projection:
         files["lint-report.md"] = self.page("Lint report") + "Original source findings and current outcomes; a disclosed unknown is not recovered authorship.\n\n" + ("\n".join("- **" + f["outcome"] + "** · " + f["class"] + " · " + esc(f["target"]) + " · Original finding: " + esc(f["message"]) + (" · " + self.link("Canonical correction", self.event_path(self.events[f["correction_event_id"]])) if f.get("correction_event_id") else "") for f in self.findings) or "No findings.") + "\n"
         counts = collections.Counter(t["status"] for t in self.tasks.values())
         index = self.page(self.project + " — " + self.board) + "Canonical inputs: " + esc(records.canonical(self.inputs["paths"])) + "\n\n"
-        fingerprints = {"board": records.digest(self.inputs["tables"]),
+        fingerprints = {"board": board_snapshot_digest(self.inputs["tables"]),
                         "knowledge": records.digest({p: records.byte_hash(b) for p, b in self.inputs["knowledge"].items()}),
                         "raw": records.digest({p: records.byte_hash(b) for p, b in self.inputs["artifacts"].items()}),
                         "rules": records.byte_hash(self.inputs["rules"])}
@@ -786,7 +853,7 @@ class Projection:
             "compiler_source_sha256": records.byte_hash(Path(__file__).read_bytes()),
             "schema_source_sha256": records.byte_hash(Path(records.__file__).read_bytes()),
             "project": self.project, "board": self.board, "sources": self.inputs["paths"],
-            "board_snapshot_sha256": records.digest(self.inputs["tables"]),
+            "board_snapshot_sha256": board_snapshot_digest(self.inputs["tables"]),
             "tree": {p: records.byte_hash(b) for p, b in self.inputs["knowledge"].items()},
             "raw": {p: records.byte_hash(b) for p, b in self.inputs["artifacts"].items()},
             "rules_sha256": records.byte_hash(self.inputs["rules"]),

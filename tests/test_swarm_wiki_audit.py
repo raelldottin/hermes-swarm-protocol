@@ -161,6 +161,111 @@ def annotation(project, subject, relation, time=20, **fields):
     return add(project, "provenance", {"subject": subject, "relation": relation, "rationale": "Reviewed original revision", **fields}, actor="maintainer", time=time)
 
 
+def synthesis_data(project, source_digests, path="context.md", **changes):
+    sha = records.file_hash(project["tree"], path)
+    return {"node_path": path, "node_sha256": sha, "source_digests": source_digests, "category": "investigations",
+            "evidence": [{"kind": "knowledge", "path": path, "sha256": sha}], **changes}
+
+
+def test_current_synthesis_retires_only_its_obsolete_node_revision_findings(project):
+    subject = node_subject(project)
+    captured = records.capture(project["workspace"], subject["path"], "source-snapshots", source_root=project["tree"])
+    original = (project["raw"] / captured["path"]).read_bytes()
+    artifact = add(project, "artifact", {"capture": captured, "source_path": subject["path"], "media_type": "text/markdown", "source_origin": "knowledge"}, key="source-artifact", time=18)
+    sources = {artifact["event_id"]: artifact["payload_digest"]}
+    prior = add(project, "synthesis", synthesis_data(project, sources), actor="maintainer", key="synthesis-old")
+    assert build(project)[0].accepted(prior)
+    (project["tree"] / subject["path"]).write_text("---\nrelated: [generated.md]\n---\nHistorical context, not live proof")
+    (project["tree"] / "generated.md").write_text("Associated context, not independent verification")
+    current = add(project, "synthesis", synthesis_data(project, sources, supersedes=prior["event_id"]), actor="maintainer", key="synthesis-current", time=30)
+    before = project["db"].read_bytes()
+    projection, files, inputs = build(project)
+    historical = [f for f in projection.findings if f["target"] == prior["event_id"]]
+    assert {f["class"] for f in historical} == {"stale-knowledge", "stale-reference"}
+    assert all(f["outcome"] == "superseded_history" and f["correction_event_id"] == current["event_id"] for f in historical)
+    assert prior["event_id"] in projection.events and current["event_id"] in projection.events
+    assert projection.accepted(current)
+    assert (project["raw"] / captured["path"]).read_bytes() == original
+    assert project["db"].read_bytes() == before
+    assert files == build(project)[1]
+
+
+def synthesis_history_fixture(project, **prior_changes):
+    subject = node_subject(project)
+    captured = records.capture(project["workspace"], subject["path"], "source-snapshots", source_root=project["tree"])
+    artifact = add(project, "artifact", {"capture": captured, "source_path": subject["path"], "media_type": "text/markdown", "source_origin": "knowledge"}, key="source-artifact", time=18)
+    sources = {artifact["event_id"]: artifact["payload_digest"]}
+    prior = add(project, "synthesis", synthesis_data(project, sources, **prior_changes), actor="maintainer", key="synthesis-old")
+    (project["tree"] / subject["path"]).write_text("---\nrelated: []\n---\nHistorical context, not live proof")
+    return prior, sources, captured
+
+
+@pytest.mark.parametrize("invalid", ["author", "topic", "project", "type", "node_hash", "source_digest", "own_evidence", "source_capture"])
+def test_invalid_synthesis_successor_cannot_retire_predecessor_findings(project, invalid):
+    prior, sources, captured = synthesis_history_fixture(project)
+    data = synthesis_data(project, sources, supersedes=prior["event_id"])
+    actor, topic, kind = "maintainer", "auth/issuer", "synthesis"
+    if invalid == "author":
+        actor = "other-maintainer"  # even configured maintainer authority cannot change this chain's author
+    elif invalid == "topic":
+        topic = "another/topic"
+    elif invalid == "node_hash":
+        data["node_sha256"] = "0" * 64
+    elif invalid == "source_digest":
+        data["source_digests"] = {next(iter(sources)): "0" * 64}
+    elif invalid == "own_evidence":
+        data["evidence"] = prior["data"]["evidence"]
+    elif invalid == "source_capture":
+        path = project["raw"] / captured["path"]
+        path.unlink()
+        path.write_bytes(b"changed original capture")
+    elif invalid == "type":
+        kind, data = "claim", {"assertion": "Different type", "scope": "historical", "supersedes": prior["event_id"]}
+    if invalid == "project":
+        event = records.make_record("other-project", "t1", actor, "synthesis-current", topic, kind, data, 30)
+        with sqlite3.connect(project["db"]) as conn:
+            conn.execute("INSERT INTO task_comments(task_id,author,body,created_at) VALUES (?,?,?,?)", ("t1", actor, records.PREFIX + records.canonical(event), 30))
+    else:
+        add(project, kind, data, actor=actor, topic=topic, key="synthesis-current", time=30)
+    projection = build(project, maintainers=("maintainer", "other-maintainer"))[0]
+    historical = [f for f in projection.findings if f["target"] == prior["event_id"]]
+    assert historical and all(f["outcome"] == "unresolved" for f in historical)
+
+
+def test_synthesis_retirement_keeps_lost_original_artifact_finding_unresolved(project):
+    subject = node_subject(project)
+    extra = records.capture(project["workspace"], subject["path"], "test-results", source_root=project["tree"])
+    prior, sources, _ = synthesis_history_fixture(project, evidence=[extra])
+    (project["raw"] / extra["path"]).unlink()
+    current = add(project, "synthesis", synthesis_data(project, sources, supersedes=prior["event_id"]), actor="maintainer", key="synthesis-current", time=30)
+    projection = build(project)[0]
+    historical = [f for f in projection.findings if f["target"] == prior["event_id"]]
+    assert projection.accepted(current)
+    assert next(f for f in historical if f["class"] == "stale-knowledge")["outcome"] == "superseded_history"
+    lost = next(f for f in historical if f["class"] == "stale-reference")
+    assert json.loads(lost["message"])["kind"] == "artifact"
+    assert lost["outcome"] == "unresolved"
+
+
+def test_synthesis_history_retirement_validates_full_chain_and_rejects_cycles(project):
+    prior, sources, _ = synthesis_history_fixture(project)
+    middle = add(project, "synthesis", synthesis_data(project, sources, supersedes=prior["event_id"]), actor="maintainer", key="synthesis-middle", time=30)
+    (project["tree"] / "context.md").write_text("---\nrelated: []\ntitle: Historical context\n---\nHistorical context, not live proof")
+    current = add(project, "synthesis", synthesis_data(project, sources, supersedes=middle["event_id"]), actor="maintainer", key="synthesis-current", time=40)
+    projection = build(project)[0]
+    historical = [f for f in projection.findings if f["target"] in {prior["event_id"], middle["event_id"]}]
+    assert len(historical) == 4 and all(f["outcome"] == "superseded_history" and f["correction_event_id"] == current["event_id"] for f in historical)
+    # Canonical event identity is publication-key based, allowing a fully hashed adversarial cycle.
+    prior_data = dict(prior["data"], supersedes=middle["event_id"])
+    cyclic_prior = records.make_record("p", "t1", "maintainer", "synthesis-old", "auth/issuer", "synthesis", prior_data, 20)
+    with sqlite3.connect(project["db"]) as conn:
+        conn.execute("UPDATE task_comments SET body=? WHERE body=?", (records.PREFIX + records.canonical(cyclic_prior), records.PREFIX + records.canonical(prior)))
+    projection = build(project)[0]
+    assert projection.accepted(current)
+    historical = [f for f in projection.findings if f["target"] in {prior["event_id"], middle["event_id"]}]
+    assert historical and all(f["outcome"] == "unresolved" for f in historical)
+
+
 def event_subject(project, kind="promoted", payload="{}"):
     with sqlite3.connect(project["db"]) as conn:
         conn.row_factory = sqlite3.Row

@@ -1,5 +1,6 @@
 """Acceptance tests for evidence, provenance, synthesis and disposable publication."""
 import fcntl
+import base64
 import json
 import os
 import re
@@ -75,6 +76,95 @@ def verify(project, target, verdict="pass", actor="verifier", scope="tenant path
 
 def classes(projection):
     return {f["class"] for f in projection.findings}
+
+
+def test_sqlite_blob_result_and_summary_are_lossless_opaque_and_deterministic(project):
+    # Alepes stores SQLite BLOBs in these two TEXT-declared lifecycle columns.
+    # Synthetic bytes deliberately include prose which must not become a claim.
+    payload = b"FLEET_CLAIM_ALL_VERIFIED\x00\xff\xfe"
+    with sqlite3.connect(project["db"]) as conn:
+        conn.execute("UPDATE tasks SET result=?, completed_at=14 WHERE id='t1'", (sqlite3.Binary(payload),))
+        conn.execute("INSERT INTO task_runs VALUES ('r1','t1','builder',12,13,?,NULL,'done','completed')", (sqlite3.Binary(payload),))
+        assert conn.execute("SELECT typeof(result) FROM tasks WHERE id='t1'").fetchone()[0] == "blob"
+        assert conn.execute("SELECT typeof(summary) FROM task_runs WHERE id='r1'").fetchone()[0] == "blob"
+    before = project["db"].read_bytes()
+    projection, files, inputs = build(project)
+    assert project["db"].read_bytes() == before
+    assert inputs["tables"]["tasks"][0]["result"] == payload
+    assert inputs["tables"]["task_runs"][0]["summary"] == payload
+    assert isinstance(inputs["tables"]["tasks"][0]["result"], bytes)
+    serialized = json.loads(records.canonical(wiki.board_snapshot_values(inputs["tables"])))
+    cell = serialized["task_runs"][0]["summary"]["$sqlite_blob"]
+    assert cell["encoding"] == "base64"
+    assert base64.b64decode(cell["data"], validate=True) == payload
+    assert files == build(project)[1]
+    assert project["db"].read_bytes() == before
+    for path in ("log.md", projection.task_path("t1")):
+        rendered = files[path]
+        assert b"SQLite BLOB" in rendered
+        assert str(len(payload)).encode() in rendered
+        assert records.byte_hash(payload).encode() in rendered
+        assert b"FLEET_CLAIM_ALL_VERIFIED" not in rendered
+        assert b"not interpreted as text" in rendered
+    manifest = json.loads(files["manifest.json"])
+    assert manifest["board_snapshot_sha256"] == wiki.board_snapshot_digest(inputs["tables"])
+    assert wiki.board_snapshot_digest(inputs["tables"]) != wiki.board_snapshot_digest({**inputs["tables"], "tasks": [{**inputs["tables"]["tasks"][0], "result": payload.decode("utf-8", errors="replace")}, inputs["tables"]["tasks"][1]]})
+    with sqlite3.connect(project["db"]) as conn:
+        conn.execute("UPDATE task_runs SET summary=? WHERE id='r1'", (sqlite3.Binary(payload[:-1] + b"\xfd"),))
+    after_edit = project["db"].read_bytes()
+    _, changed, changed_inputs = build(project)
+    assert project["db"].read_bytes() == after_edit
+    assert json.loads(changed["manifest.json"])["board_snapshot_sha256"] != manifest["board_snapshot_sha256"]
+    assert changed_inputs["knowledge"] == inputs["knowledge"]
+    assert changed_inputs["artifacts"] == inputs["artifacts"]
+    assert changed_inputs["rules"] == inputs["rules"]
+
+
+def test_text_only_board_digest_retains_existing_manifest_compatibility(project):
+    _, files, inputs = build(project)
+    manifest = json.loads(files["manifest.json"])
+    assert manifest["board_snapshot_sha256"] == records.digest(inputs["tables"])
+    assert wiki.board_snapshot_digest(inputs["tables"]) == records.digest(inputs["tables"])
+
+
+def test_sqlite_blob_comment_and_run_metadata_remain_opaque_sources(project, monkeypatch):
+    # Tachikoma stores one BLOB each in these TEXT-declared columns. A binary
+    # comment must not be decoded into a verifier identity, pass, or commit.
+    payload = b'swarm_verify {"protocol":"hermes-swarm/v1","kind":"verification","verifier":"builder","verdict":"pass","live_evidence":["FLEET_BINARY_CLAIM"]}\ncommit: 1234567\x00\xff'
+    metadata = b'{"claim":"FLEET_BINARY_METADATA"}\x00\xfe'
+    with sqlite3.connect(project["db"]) as conn:
+        conn.execute("ALTER TABLE task_runs ADD COLUMN metadata TEXT")
+        conn.execute("INSERT INTO task_comments(task_id,author,body,created_at) VALUES ('t1','builder',?,15)", (sqlite3.Binary(payload),))
+        conn.execute("INSERT INTO task_runs(id,task_id,profile,started_at,ended_at,summary,status,outcome,metadata) VALUES ('r1','t1','builder',12,13,'Text summary','done','completed',?)", (sqlite3.Binary(metadata),))
+    references = []
+    original_reference = wiki.Projection.reference
+    def track_reference(self, ref, target):
+        references.append((ref, target))
+        return original_reference(self, ref, target)
+    monkeypatch.setattr(wiki.Projection, "reference", track_reference)
+    before = project["db"].read_bytes()
+    projection, files, inputs = build(project)
+    assert project["db"].read_bytes() == before
+    assert inputs["tables"]["task_comments"][0]["body"] == payload
+    assert inputs["tables"]["task_runs"][0]["metadata"] == metadata
+    assert projection.legacy["t1"] == []
+    assert projection.events == {}
+    assert not any(target.startswith("legacy-heuristic:") for _, target in references)
+    for name in ("log.md", projection.task_path("t1")):
+        assert b"SQLite BLOB" in files[name]
+        assert records.byte_hash(payload).encode() in files[name]
+        assert b"not interpreted as text" in files[name]
+        assert b"FLEET_BINARY_CLAIM" not in files[name]
+        assert b"1234567" not in files[name]
+    assert files == build(project)[1]
+    assert project["db"].read_bytes() == before
+    original_digest = json.loads(files["manifest.json"])["board_snapshot_sha256"]
+    with sqlite3.connect(project["db"]) as conn:
+        conn.execute("UPDATE task_runs SET metadata=? WHERE id='r1'", (sqlite3.Binary(metadata[:-1] + b"\xfd"),))
+    after_edit = project["db"].read_bytes()
+    _, changed, _ = build(project)
+    assert project["db"].read_bytes() == after_edit
+    assert json.loads(changed["manifest.json"])["board_snapshot_sha256"] != original_digest
 
 
 def test_corrected_verification_updates_current_state_retains_history(project):
