@@ -7,6 +7,22 @@ from types import SimpleNamespace
 
 import pytest
 
+from test_swarm_protocol import swarm_env
+
+
+def test_completion_reads_public_task_dataclass(swarm_env):
+    from hermes_cli import kanban_db as kb, kanban_db_connect as kbc
+
+    result = canary.actor_action(SimpleNamespace(), {
+        "action": "complete", "board": None, "task_id": swarm_env["source_tid"],
+    })
+    assert result == {"ok": True}
+    conn = kbc.connect()
+    try:
+        assert kb.get_task(conn, swarm_env["source_tid"]).status == "done"
+    finally:
+        conn.close()
+
 SPEC = importlib.util.spec_from_file_location("fleet_canary", Path(__file__).parents[1] / "ops/fleet_canary.py")
 canary = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(canary)

@@ -245,7 +245,7 @@ def actor_action(options, payload):
                                      initial_status="blocked", idempotency_key=payload["key"], board=payload["board"])
                 return {"ok": True, "task_id": tid}
             kb.complete_task(conn, payload["task_id"], summary="Immutable release and fleet publication canary passed; no model calls.", fire_lifecycle_hook=False)
-            return {"ok": kb.get_task(conn, payload["task_id"])["status"] == "done"}
+            return {"ok": kb.get_task(conn, payload["task_id"]).status == "done"}
         finally:
             conn.close()
     if action == "verify":
