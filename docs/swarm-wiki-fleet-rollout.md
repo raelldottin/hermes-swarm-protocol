@@ -114,5 +114,66 @@ current successor must retire only its same-author, same-topic historical
 knowledge revision. Lost captures and unrelated evidence must remain findings.
 The scoped regression and cycle/source-freshness checks govern that correction.
 
-Final immutable release identity, fresh-profile canaries, board receipts and
-compiler iteration acceptance are recorded after final validation below.
+### Final operational acceptance (2026-10-09)
+
+All three operational gates passed across eight boards, 43 identities and six
+knowledge trees. The active immutable release is
+`f341d77d5a1acdc52a9aefdf1571ac0e215eb558`. Installation checks committed blob
+identity, Git modes, unexpected paths, symlinks, hardlinks and read-only
+permissions. The global plugin points to that immutable release; the original
+authored checkout was preserved. Configuration backups remain private under
+`~/.hermes/backups/swarm-wiki-fleet-20261009/configs`.
+
+The exact release passed 154 tests with zero failures, errors or skips. All 43
+fresh profiles loaded its actual plugin origin, authenticated identity, five
+registered tools, expected project mappings and 600-second curation deadlines.
+The reviewed configuration apply was idempotent, changing zero files on retry.
+
+Each of the eight live canaries observed a newly created task as blocked with
+zero runs before publishing. A distinct existing fleet profile independently
+read the fixture, raw capture and a fresh default-runtime probe. Capture, claim
+and verification retries returned duplicates. Wrong-board and outsider calls
+were rejected, with immediately adjacent equality checks across all eight
+database schemas, tables and counters and every raw tree. Pre-existing rows
+were preserved, and each canary task completed through the public Kanban API.
+These bounded fixtures establish protocol operation; they do not establish
+production workload performance or verify historical source assertions.
+
+Iteration QA corrected the runner's treatment of Hermes's standard `error`
+rejection envelope, rejected ambiguous mixed success/error responses, and
+required an observed blocked state. Completed reuse is allowed only when the
+same task existed before creation. The interrupted HSP attempt `t_2ee33420`
+completed on its original release after the harness correction; failed and
+successful retry receipts were retained separately. The final eight canaries
+used fresh release-specific tasks, rather than reusing that attempt.
+
+All eight generated projections passed reproducibility checks. Every manifest
+file digest and local Markdown link was verified. The compiler's `--check`
+returns 1 on the seven fleets retaining source findings even when output
+matches; HSP returned 0 with no unresolved findings.
+
+The frozen baseline's 7,546 unresolved source findings were all preserved.
+During validation, 45 additional `respawn_guarded` events on five pre-existing
+tasks produced missing-provenance findings. None was linked to a final canary
+task, and no canary source finding was added. These lifecycle findings remain
+visible and unresolved; the current source total is 7,591. No historical
+assertion was adopted or independently verified to pass operational gates.
+
+| Project | Baseline unresolved | Current unresolved | Live canary |
+| --- | ---: | ---: | --- |
+| HSP | 0 | 0 | passed |
+| Alepes | 409 | 409 | passed |
+| Home Lab | 489 | 498 | passed |
+| Life Achievements | 2,359 | 2,377 | passed |
+| Opnory | 909 | 918 | passed |
+| Opnory IaC | 307 | 307 | passed |
+| Tachikoma | 494 | 494 | passed |
+| Tunory | 2,579 | 2,588 | passed |
+
+The sanitized, reviewable results are in
+[`swarm-wiki-fleet-acceptance.json`](swarm-wiki-fleet-acceptance.json). Detailed
+receipts remain private in the isolated rollout worktree's
+`.swarm/maintenance/`, including original failed attempts, release installs,
+43-profile checks, eight final canaries, audit baselines and exact-release test
+results. Existing long-lived Hermes processes must restart before they use the
+new plugin; fresh-process loading was verified for every configured identity.

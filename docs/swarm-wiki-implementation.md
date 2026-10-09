@@ -1,5 +1,12 @@
 # Swarm Wiki: research, plan, design and QA
 
+Fleet operational rollout completed on 2026-10-09 across all eight existing
+boards and 43 identities. See [fleet rollout results](swarm-wiki-fleet-rollout.md)
+and [sanitized acceptance receipts](swarm-wiki-fleet-acceptance.json). The
+immutable release passed 154 tests and all live canaries. Fleet source
+acceptance remains separate: 7,591 historical/lifecycle findings are retained
+outside HSP, with no new canary source findings.
+
 ## Research
 
 Reviewed 2026-10-08 against the current checkout and installed Hermes sources.

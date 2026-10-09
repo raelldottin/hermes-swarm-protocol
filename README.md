@@ -1,5 +1,10 @@
 # hermes-swarm-protocol
 
+Swarm Wiki is deployed to all eight existing project boards and 43 identities.
+See the [fleet rollout results](docs/swarm-wiki-fleet-rollout.md) and
+[acceptance receipts](docs/swarm-wiki-fleet-acceptance.json) for the tested
+immutable release, live canaries and retained historical source findings.
+
 Swarm coordination semantics for [Hermes Agent](https://hermes-agent.nousresearch.com/)
 fleets: a thin protocol layer over Hermes Kanban (work state) and ByteRover (shared
 project knowledge), with a generated Swarm Wiki for readable knowledge and audit.
