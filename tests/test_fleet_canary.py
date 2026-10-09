@@ -10,7 +10,7 @@ import pytest
 from test_swarm_protocol import swarm_env
 
 
-@pytest.mark.parametrize("status,runs", [("queued", []), ("running", [object()]), ("blocked", [object()])])
+@pytest.mark.parametrize("status,runs", [("queued", []), ("running", [object()]), ("blocked", [object()]), ("done", [])])
 def test_canary_rejects_runnable_or_dispatched_creation(status, runs):
     with pytest.raises(RuntimeError):
         canary.creation_observation(SimpleNamespace(status=status), runs)
@@ -19,7 +19,7 @@ def test_canary_rejects_runnable_or_dispatched_creation(status, runs):
 def test_canary_observes_blocked_creation_and_honest_completed_reuse():
     new = canary.creation_observation(SimpleNamespace(status="blocked"), [])
     assert new["observed_blocked_no_runs"] and not new["reused_completed"]
-    reused = canary.creation_observation(SimpleNamespace(status="done"), [object()])
+    reused = canary.creation_observation(SimpleNamespace(status="done"), [object()], existed_before=True)
     assert reused["reused_completed"] and not reused["observed_blocked_no_runs"]
 
 

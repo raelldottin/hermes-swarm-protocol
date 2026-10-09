@@ -247,12 +247,12 @@ def sanitized_tool_reply(result):
     return safe
 
 
-def creation_observation(task, runs):
+def creation_observation(task, runs, *, existed_before=False):
     state = {"status": task.status, "run_count": len(runs), "observed_blocked_no_runs": False,
              "reused_completed": False}
     if task.status == "blocked" and not runs:
         state["observed_blocked_no_runs"] = True
-    elif task.status == "done":
+    elif existed_before and task.status == "done":
         state["reused_completed"] = True
     else:
         raise RuntimeError("canary task is runnable or dispatched before publication")
@@ -267,11 +267,13 @@ def actor_action(options, payload):
         conn = kbc.connect(board=payload["board"])
         try:
             if action == "create":
+                existing = conn.execute("SELECT id FROM tasks WHERE idempotency_key = ? AND status != 'archived' ORDER BY created_at DESC LIMIT 1", (payload["key"],)).fetchone()
                 tid = kb.create_task(conn, title=payload["title"], created_by="default", assignee="default",
                                      workspace_kind="dir", workspace_path=payload["workspace"],
                                      initial_status="blocked", idempotency_key=payload["key"], board=payload["board"])
                 return {"ok": True, "task_id": tid,
-                        "creation_observation": creation_observation(kb.get_task(conn, tid), kb.list_runs(conn, tid))}
+                        "creation_observation": creation_observation(kb.get_task(conn, tid), kb.list_runs(conn, tid),
+                                                                     existed_before=bool(existing and existing[0] == tid))}
             kb.complete_task(conn, payload["task_id"], summary="Immutable release and fleet publication canary passed; no model calls.", fire_lifecycle_hook=False)
             return {"ok": kb.get_task(conn, payload["task_id"]).status == "done"}
         finally:
