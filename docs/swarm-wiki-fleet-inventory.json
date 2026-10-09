@@ -1,0 +1,673 @@
+{
+  "schema_version": 1,
+  "recorded_at_utc": "2026-10-09T03:04:38Z",
+  "scope": "All existing nonarchived swarm project boards",
+  "status": "research inventory and proposed maintenance ownership; configuration changes not applied",
+  "identity_count": 43,
+  "profile_config_count": 42,
+  "board_count": 8,
+  "knowledge_tree_count": 6,
+  "sources": {
+    "default_config": "/Users/raelldottin/.hermes/config.yaml",
+    "profile_configs": "/Users/raelldottin/.hermes/profiles/<profile>/config.yaml",
+    "board_metadata": "/Users/raelldottin/.hermes/kanban/boards/<board>/board.json",
+    "board_tasks": "Read-only SQLite queries against each board's canonical kanban.db",
+    "validated_plugin": "/tmp/hermes-swarm-index-remediation-20261008/hermes_swarm_protocol/__init__.py",
+    "runtime_profile_source": "/Users/raelldottin/.hermes/hermes-agent/hermes_cli/profiles.py"
+  },
+  "schema_and_authority": {
+    "tasks_project_field": "project_id",
+    "tasks_project_field_named_project_exists": false,
+    "board_workspace_kind_and_agent_profiles_fields_exist": false,
+    "runtime_identity": "Validated plugin _identity calls current_profile_name; identity comes from runtime profile context, not tool arguments.",
+    "wiki_authorization": "Explicit wiki_projects board binding, runtime-profile authorization, runtime-task binding and workspace confinement.",
+    "task_project_equality_enforced_by_validated_wiki_context": false,
+    "task_project_equality_evidence": "Validated __init__.py:595 selects workspace_path only; lines 589-616 enforce runtime task and confined workspace, not project_id equality.",
+    "proposed_ownership": "default is proposed as explicit maintenance owner across boards; only HSP default and hsp-security are already authorized. No security/verifier maintainer is inferred for other fleets."
+  },
+  "preserve": {
+    "existing_project_role_maps": true,
+    "existing_default_extraction": false,
+    "existing_worker_extraction_policies": true,
+    "existing_project_sources_and_task_history": true,
+    "unrelated_role_aliases": true
+  },
+  "fleets": [
+    {
+      "board": "hsp",
+      "project_key": "hermes-swarm-protocol",
+      "existing_role_project_key": "hermes-swarm-protocol",
+      "existing_project_role_map": {
+        "builder": "hsp-builder",
+        "implementation": "hsp-builder",
+        "research": "hsp-researcher",
+        "security": "hsp-security",
+        "verification": "hsp-verifier"
+      },
+      "existing_role_profiles": [
+        "hsp-builder",
+        "hsp-researcher",
+        "hsp-security",
+        "hsp-verifier"
+      ],
+      "workspace": "/Users/raelldottin/Documents/Personal/hermes-swarm-protocol",
+      "repo": "/Users/raelldottin/Documents/Personal/hermes-swarm-protocol",
+      "board_metadata": {
+        "source": "/Users/raelldottin/.hermes/kanban/boards/hsp/board.json",
+        "default_workdir": "/Users/raelldottin/Documents/Personal/hermes-swarm-protocol",
+        "project_id": null,
+        "archived": false,
+        "workspace_kind": null,
+        "agent_profiles": null,
+        "absent_fields": [
+          "workspace_kind",
+          "agent_profiles"
+        ]
+      },
+      "profiles": [
+        "default",
+        "hsp-builder",
+        "hsp-researcher",
+        "hsp-security",
+        "hsp-verifier"
+      ],
+      "profile_membership_basis": "existing profile family and configured project routing",
+      "existing_authorized_maintainers": [
+        "default",
+        "hsp-security"
+      ],
+      "proposed_maintenance_owner": "default",
+      "proposed_maintainers": [
+        "default",
+        "hsp-security"
+      ],
+      "maintainer_authorization_status": "existing wiki configuration",
+      "memory_workdir": "/Users/raelldottin/.hermes/byterover-projects/hermes-swarm-protocol",
+      "memory_workdir_exceptions": {
+        "default": null
+      },
+      "memory_curation_timeout_exceptions": {
+        "default": null
+      },
+      "knowledge_tree": "/Users/raelldottin/.hermes/byterover-projects/hermes-swarm-protocol/.brv/context-tree",
+      "knowledge_tree_exists": true,
+      "existing_curation_timeout_seconds": 600,
+      "existing_plugin_curation_timeout_seconds": 600,
+      "wiki_rules": "/Users/raelldottin/Documents/Personal/hermes-swarm-protocol/.swarm/SWARM_WIKI.md",
+      "wiki_output": "/Users/raelldottin/Documents/Personal/hermes-swarm-protocol/.swarm/wiki",
+      "wiki_installed": true,
+      "task_workspace_root": "/Users/raelldottin/.hermes/kanban/boards/hsp/workspaces",
+      "task_workspace_root_exists": true,
+      "task_source": "/Users/raelldottin/.hermes/kanban/boards/hsp/kanban.db",
+      "task_project_field": "project_id",
+      "task_project_id_distribution": [
+        {
+          "value": null,
+          "count": 10
+        }
+      ],
+      "task_workspace_kind_distribution": {
+        "dir": 1,
+        "scratch": 9
+      },
+      "task_count": 10,
+      "notes": [
+        "Default memory.byterover.workdir is unset; workers point to the HSP tree."
+      ]
+    },
+    {
+      "board": "alepes",
+      "project_key": "alepes",
+      "existing_role_project_key": "alepes",
+      "existing_project_role_map": {
+        "adversary": "alepes-adversary",
+        "architect": "alepes-builder",
+        "builder": "alepes-builder",
+        "invariants": "alepes-invariants",
+        "verification": "alepes-verifier"
+      },
+      "existing_role_profiles": [
+        "alepes-adversary",
+        "alepes-builder",
+        "alepes-invariants",
+        "alepes-verifier"
+      ],
+      "workspace": "/Users/raelldottin/Documents/Personal/alepes/alepes",
+      "repo": "/Users/raelldottin/Documents/Personal/alepes/alepes",
+      "board_metadata": {
+        "source": "/Users/raelldottin/.hermes/kanban/boards/alepes/board.json",
+        "default_workdir": "/Users/raelldottin/Documents/Personal/alepes/alepes",
+        "project_id": "p_a8207c70",
+        "archived": false,
+        "workspace_kind": null,
+        "agent_profiles": null,
+        "absent_fields": [
+          "workspace_kind",
+          "agent_profiles"
+        ]
+      },
+      "profiles": [
+        "alepes",
+        "alepes-adversary",
+        "alepes-builder",
+        "alepes-invariants",
+        "alepes-verifier"
+      ],
+      "profile_membership_basis": "existing profile family and configured project routing",
+      "existing_authorized_maintainers": [],
+      "proposed_maintenance_owner": "default",
+      "proposed_maintainers": [
+        "default"
+      ],
+      "maintainer_authorization_status": "requires explicit wiki_projects configuration; no secondary maintainer inferred",
+      "memory_workdir": "/Users/raelldottin/.hermes/byterover-projects/alepes",
+      "knowledge_tree": "/Users/raelldottin/.hermes/byterover-projects/alepes/.brv/context-tree",
+      "knowledge_tree_exists": true,
+      "existing_curation_timeout_seconds": 360,
+      "existing_plugin_curation_timeout_seconds": null,
+      "wiki_rules": "/Users/raelldottin/Documents/Personal/alepes/alepes/.swarm/SWARM_WIKI.md",
+      "wiki_output": "/Users/raelldottin/Documents/Personal/alepes/alepes/.swarm/wiki",
+      "wiki_installed": false,
+      "task_workspace_root": "/Users/raelldottin/.hermes/kanban/boards/alepes/workspaces",
+      "task_workspace_root_exists": true,
+      "task_source": "/Users/raelldottin/.hermes/kanban/boards/alepes/kanban.db",
+      "task_project_field": "project_id",
+      "task_project_id_distribution": [
+        {
+          "value": null,
+          "count": 26
+        },
+        {
+          "value": "p_5aeba6fd",
+          "count": 6
+        },
+        {
+          "value": "p_a8207c70",
+          "count": 91
+        }
+      ],
+      "task_workspace_kind_distribution": {
+        "scratch": 23,
+        "worktree": 100
+      },
+      "task_count": 123,
+      "notes": [
+        "Archived historical tasks include other project IDs or cross-project paths; these do not grant wiki access."
+      ]
+    },
+    {
+      "board": "home-lab",
+      "project_key": "home-lab",
+      "existing_role_project_key": "opnory",
+      "existing_project_role_map": {
+        "architect": "opnory-architect",
+        "builder": "opnory-builder",
+        "executor": "opnory-executor",
+        "verification": "opnory-verifier",
+        "security": "opnory-security",
+        "adversary": "home-lab-adversary"
+      },
+      "existing_role_profiles": [
+        "opnory-architect",
+        "opnory-builder",
+        "opnory-executor",
+        "opnory-verifier",
+        "opnory-security",
+        "home-lab-adversary"
+      ],
+      "workspace": "/Users/raelldottin/Documents/Personal/alepes/home_lab",
+      "repo": "/Users/raelldottin/Documents/Personal/alepes/home_lab",
+      "board_metadata": {
+        "source": "/Users/raelldottin/.hermes/kanban/boards/home-lab/board.json",
+        "default_workdir": "/Users/raelldottin/Documents/Personal/alepes/home_lab",
+        "project_id": null,
+        "archived": false,
+        "workspace_kind": null,
+        "agent_profiles": null,
+        "absent_fields": [
+          "workspace_kind",
+          "agent_profiles"
+        ]
+      },
+      "profiles": [
+        "home-lab",
+        "home-lab-adversary",
+        "home-lab-builder",
+        "home-lab-invariants",
+        "home-lab-verifier"
+      ],
+      "profile_membership_basis": "existing home-lab profile family and board task assignees; role routing still targets opnory",
+      "existing_authorized_maintainers": [],
+      "proposed_maintenance_owner": "default",
+      "proposed_maintainers": [
+        "default"
+      ],
+      "maintainer_authorization_status": "requires explicit wiki_projects configuration; no secondary maintainer inferred",
+      "memory_workdir": "/Users/raelldottin/.hermes/byterover-projects/opnory",
+      "knowledge_tree": "/Users/raelldottin/.hermes/byterover-projects/opnory/.brv/context-tree",
+      "knowledge_tree_exists": true,
+      "existing_curation_timeout_seconds": 360,
+      "existing_plugin_curation_timeout_seconds": null,
+      "wiki_rules": "/Users/raelldottin/Documents/Personal/alepes/home_lab/.swarm/SWARM_WIKI.md",
+      "wiki_output": "/Users/raelldottin/Documents/Personal/alepes/home_lab/.swarm/wiki",
+      "wiki_installed": false,
+      "task_workspace_root": "/Users/raelldottin/.hermes/kanban/boards/home-lab/workspaces",
+      "task_workspace_root_exists": true,
+      "task_source": "/Users/raelldottin/.hermes/kanban/boards/home-lab/kanban.db",
+      "task_project_field": "project_id",
+      "task_project_id_distribution": [
+        {
+          "value": null,
+          "count": 28
+        }
+      ],
+      "task_workspace_kind_distribution": {
+        "scratch": 28
+      },
+      "task_count": 28,
+      "notes": [
+        "Existing project-role map is opnory, and every home-lab profile points to Opnory knowledge.",
+        "All 28 task project_id values are null; wiki project key home-lab is a proposed explicit board binding, not an existing task project identifier."
+      ]
+    },
+    {
+      "board": "life-achievements",
+      "project_key": "life-achievements",
+      "existing_role_project_key": "life-achievements",
+      "existing_project_role_map": {
+        "product_spec": "la-product-spec",
+        "django_architecture": "la-architect",
+        "django_builder": "la-builder",
+        "domain_builder": "la-domain",
+        "integrations": "la-integrations",
+        "database": "la-database",
+        "security": "la-security",
+        "moderation": "la-moderation",
+        "qa": "la-qa",
+        "verification": "la-verifier",
+        "builder": "la-builder",
+        "orchestrator": "la"
+      },
+      "existing_role_profiles": [
+        "la-product-spec",
+        "la-architect",
+        "la-builder",
+        "la-domain",
+        "la-integrations",
+        "la-database",
+        "la-security",
+        "la-moderation",
+        "la-qa",
+        "la-verifier",
+        "la"
+      ],
+      "workspace": "/Users/raelldottin/Documents/Personal/life_achievements",
+      "repo": "/Users/raelldottin/Documents/Personal/life_achievements",
+      "board_metadata": {
+        "source": "/Users/raelldottin/.hermes/kanban/boards/life-achievements/board.json",
+        "default_workdir": "/Users/raelldottin/Documents/Personal/life_achievements",
+        "project_id": null,
+        "archived": false,
+        "workspace_kind": null,
+        "agent_profiles": null,
+        "absent_fields": [
+          "workspace_kind",
+          "agent_profiles"
+        ]
+      },
+      "profiles": [
+        "la",
+        "la-architect",
+        "la-builder",
+        "la-database",
+        "la-domain",
+        "la-integrations",
+        "la-moderation",
+        "la-product-spec",
+        "la-qa",
+        "la-security",
+        "la-verifier"
+      ],
+      "profile_membership_basis": "existing profile family and configured project routing",
+      "existing_authorized_maintainers": [],
+      "proposed_maintenance_owner": "default",
+      "proposed_maintainers": [
+        "default"
+      ],
+      "maintainer_authorization_status": "requires explicit wiki_projects configuration; no secondary maintainer inferred",
+      "memory_workdir": "/Users/raelldottin/.hermes/byterover-projects/life-achievements",
+      "knowledge_tree": "/Users/raelldottin/.hermes/byterover-projects/life-achievements/.brv/context-tree",
+      "knowledge_tree_exists": true,
+      "existing_curation_timeout_seconds": 360,
+      "existing_plugin_curation_timeout_seconds": null,
+      "wiki_rules": "/Users/raelldottin/Documents/Personal/life_achievements/.swarm/SWARM_WIKI.md",
+      "wiki_output": "/Users/raelldottin/Documents/Personal/life_achievements/.swarm/wiki",
+      "wiki_installed": false,
+      "task_workspace_root": "/Users/raelldottin/.hermes/kanban/boards/life-achievements/workspaces",
+      "task_workspace_root_exists": false,
+      "task_source": "/Users/raelldottin/.hermes/kanban/boards/life-achievements/kanban.db",
+      "task_project_field": "project_id",
+      "task_project_id_distribution": [
+        {
+          "value": null,
+          "count": 78
+        }
+      ],
+      "task_workspace_kind_distribution": {
+        "dir": 77,
+        "scratch": 1
+      },
+      "task_count": 78,
+      "notes": [
+        "Existing role aliases appear both at projects top level and under life-achievements; preserve both.",
+        "77 tasks use the project repository as their dir workspace; board workspaces directory is absent."
+      ]
+    },
+    {
+      "board": "opnory",
+      "project_key": "opnory",
+      "existing_role_project_key": "opnory",
+      "existing_project_role_map": {
+        "architect": "opnory-architect",
+        "builder": "opnory-builder",
+        "executor": "opnory-executor",
+        "verification": "opnory-verifier",
+        "security": "opnory-security",
+        "adversary": "home-lab-adversary"
+      },
+      "existing_role_profiles": [
+        "opnory-architect",
+        "opnory-builder",
+        "opnory-executor",
+        "opnory-verifier",
+        "opnory-security",
+        "home-lab-adversary"
+      ],
+      "workspace": "/Users/raelldottin/Documents/Personal/opnory/opnory",
+      "repo": "/Users/raelldottin/Documents/Personal/opnory/opnory",
+      "board_metadata": {
+        "source": "/Users/raelldottin/.hermes/kanban/boards/opnory/board.json",
+        "default_workdir": "/Users/raelldottin/Documents/Personal/opnory/opnory",
+        "project_id": "p_c977883d",
+        "archived": false,
+        "workspace_kind": null,
+        "agent_profiles": null,
+        "absent_fields": [
+          "workspace_kind",
+          "agent_profiles"
+        ]
+      },
+      "profiles": [
+        "opnory",
+        "opnory-architect",
+        "opnory-builder",
+        "opnory-executor",
+        "opnory-proof-verifier",
+        "opnory-security",
+        "opnory-verifier"
+      ],
+      "profile_membership_basis": "existing profile family and configured project routing",
+      "existing_authorized_maintainers": [],
+      "proposed_maintenance_owner": "default",
+      "proposed_maintainers": [
+        "default"
+      ],
+      "maintainer_authorization_status": "requires explicit wiki_projects configuration; no secondary maintainer inferred",
+      "memory_workdir": "/Users/raelldottin/.hermes/byterover-projects/opnory",
+      "knowledge_tree": "/Users/raelldottin/.hermes/byterover-projects/opnory/.brv/context-tree",
+      "knowledge_tree_exists": true,
+      "existing_curation_timeout_seconds": 360,
+      "existing_plugin_curation_timeout_seconds": null,
+      "wiki_rules": "/Users/raelldottin/Documents/Personal/opnory/opnory/.swarm/SWARM_WIKI.md",
+      "wiki_output": "/Users/raelldottin/Documents/Personal/opnory/opnory/.swarm/wiki",
+      "wiki_installed": false,
+      "task_workspace_root": "/Users/raelldottin/.hermes/kanban/boards/opnory/workspaces",
+      "task_workspace_root_exists": true,
+      "task_source": "/Users/raelldottin/.hermes/kanban/boards/opnory/kanban.db",
+      "task_project_field": "project_id",
+      "task_project_id_distribution": [
+        {
+          "value": null,
+          "count": 38
+        },
+        {
+          "value": "p_c977883d",
+          "count": 70
+        }
+      ],
+      "task_workspace_kind_distribution": {
+        "dir": 7,
+        "scratch": 13,
+        "worktree": 88
+      },
+      "task_count": 108,
+      "notes": [
+        "Archived historical tasks include other project IDs or cross-project paths; these do not grant wiki access."
+      ]
+    },
+    {
+      "board": "opnory-iac",
+      "project_key": "opnory-iac",
+      "existing_role_project_key": "opnory",
+      "existing_project_role_map": {
+        "architect": "opnory-architect",
+        "builder": "opnory-builder",
+        "executor": "opnory-executor",
+        "verification": "opnory-verifier",
+        "security": "opnory-security",
+        "adversary": "home-lab-adversary"
+      },
+      "existing_role_profiles": [
+        "opnory-architect",
+        "opnory-builder",
+        "opnory-executor",
+        "opnory-verifier",
+        "opnory-security",
+        "home-lab-adversary"
+      ],
+      "workspace": "/Users/raelldottin/Documents/Personal/opnory",
+      "repo": "/Users/raelldottin/Documents/Personal/opnory",
+      "board_metadata": {
+        "source": "/Users/raelldottin/.hermes/kanban/boards/opnory-iac/board.json",
+        "default_workdir": "/Users/raelldottin/Documents/Personal/opnory",
+        "project_id": null,
+        "archived": false,
+        "workspace_kind": null,
+        "agent_profiles": null,
+        "absent_fields": [
+          "workspace_kind",
+          "agent_profiles"
+        ]
+      },
+      "profiles": [
+        "opnory",
+        "opnory-architect",
+        "opnory-builder",
+        "opnory-executor",
+        "opnory-proof-verifier",
+        "opnory-security",
+        "opnory-verifier"
+      ],
+      "profile_membership_basis": "existing Opnory profile family and board task assignees; no dedicated IaC profile family",
+      "existing_authorized_maintainers": [],
+      "proposed_maintenance_owner": "default",
+      "proposed_maintainers": [
+        "default"
+      ],
+      "maintainer_authorization_status": "requires explicit wiki_projects configuration; no secondary maintainer inferred",
+      "memory_workdir": "/Users/raelldottin/.hermes/byterover-projects/opnory",
+      "knowledge_tree": "/Users/raelldottin/.hermes/byterover-projects/opnory/.brv/context-tree",
+      "knowledge_tree_exists": true,
+      "existing_curation_timeout_seconds": 360,
+      "existing_plugin_curation_timeout_seconds": null,
+      "wiki_rules": "/Users/raelldottin/Documents/Personal/opnory/.swarm/SWARM_WIKI.md",
+      "wiki_output": "/Users/raelldottin/Documents/Personal/opnory/.swarm/wiki",
+      "wiki_installed": false,
+      "task_workspace_root": "/Users/raelldottin/.hermes/kanban/boards/opnory-iac/workspaces",
+      "task_workspace_root_exists": true,
+      "task_source": "/Users/raelldottin/.hermes/kanban/boards/opnory-iac/kanban.db",
+      "task_project_field": "project_id",
+      "task_project_id_distribution": [
+        {
+          "value": null,
+          "count": 30
+        }
+      ],
+      "task_workspace_kind_distribution": {
+        "scratch": 30
+      },
+      "task_count": 30,
+      "notes": [
+        "Share existing Opnory profile family and knowledge tree; preserve independent board/workspace/wiki roots.",
+        "All 30 task project_id values are null; wiki project key opnory-iac is a proposed explicit board binding, not an existing task project identifier."
+      ]
+    },
+    {
+      "board": "tachikoma",
+      "project_key": "tachikoma",
+      "existing_role_project_key": "tachikoma",
+      "existing_project_role_map": {
+        "researcher": "tachikoma-researcher",
+        "analyst": "tachikoma-analyst",
+        "architect": "tachikoma-architect",
+        "verification": "tachikoma-verifier",
+        "safety": "tachikoma-safety",
+        "protocol": "tachikoma-protocol"
+      },
+      "existing_role_profiles": [
+        "tachikoma-researcher",
+        "tachikoma-analyst",
+        "tachikoma-architect",
+        "tachikoma-verifier",
+        "tachikoma-safety",
+        "tachikoma-protocol"
+      ],
+      "workspace": "/Users/raelldottin/Documents/Personal/tachikoma",
+      "repo": "/Users/raelldottin/Documents/Personal/tachikoma",
+      "board_metadata": {
+        "source": "/Users/raelldottin/.hermes/kanban/boards/tachikoma/board.json",
+        "default_workdir": "/Users/raelldottin/Documents/Personal/tachikoma",
+        "project_id": null,
+        "archived": false,
+        "workspace_kind": null,
+        "agent_profiles": null,
+        "absent_fields": [
+          "workspace_kind",
+          "agent_profiles"
+        ]
+      },
+      "profiles": [
+        "tachikoma",
+        "tachikoma-analyst",
+        "tachikoma-architect",
+        "tachikoma-protocol",
+        "tachikoma-researcher",
+        "tachikoma-safety",
+        "tachikoma-verifier"
+      ],
+      "profile_membership_basis": "existing profile family and configured project routing",
+      "existing_authorized_maintainers": [],
+      "proposed_maintenance_owner": "default",
+      "proposed_maintainers": [
+        "default"
+      ],
+      "maintainer_authorization_status": "requires explicit wiki_projects configuration; no secondary maintainer inferred",
+      "memory_workdir": "/Users/raelldottin/.hermes/byterover-projects/tachikoma",
+      "knowledge_tree": "/Users/raelldottin/.hermes/byterover-projects/tachikoma/.brv/context-tree",
+      "knowledge_tree_exists": true,
+      "existing_curation_timeout_seconds": 360,
+      "existing_plugin_curation_timeout_seconds": null,
+      "wiki_rules": "/Users/raelldottin/Documents/Personal/tachikoma/.swarm/SWARM_WIKI.md",
+      "wiki_output": "/Users/raelldottin/Documents/Personal/tachikoma/.swarm/wiki",
+      "wiki_installed": false,
+      "task_workspace_root": "/Users/raelldottin/.hermes/kanban/boards/tachikoma/workspaces",
+      "task_workspace_root_exists": true,
+      "task_source": "/Users/raelldottin/.hermes/kanban/boards/tachikoma/kanban.db",
+      "task_project_field": "project_id",
+      "task_project_id_distribution": [
+        {
+          "value": null,
+          "count": 75
+        }
+      ],
+      "task_workspace_kind_distribution": {
+        "scratch": 75
+      },
+      "task_count": 75,
+      "notes": []
+    },
+    {
+      "board": "tunory",
+      "project_key": "tunory",
+      "existing_role_project_key": "tunory",
+      "existing_project_role_map": {
+        "builder": "tunory-builder",
+        "verification": "tunory-verifier"
+      },
+      "existing_role_profiles": [
+        "tunory-builder",
+        "tunory-verifier"
+      ],
+      "workspace": "/Users/raelldottin/Documents/Personal/tunory",
+      "repo": "/Users/raelldottin/Documents/Personal/tunory",
+      "board_metadata": {
+        "source": "/Users/raelldottin/.hermes/kanban/boards/tunory/board.json",
+        "default_workdir": "/Users/raelldottin/Documents/Personal/tunory",
+        "project_id": null,
+        "archived": false,
+        "workspace_kind": null,
+        "agent_profiles": null,
+        "absent_fields": [
+          "workspace_kind",
+          "agent_profiles"
+        ]
+      },
+      "profiles": [
+        "tunory",
+        "tunory-builder",
+        "tunory-verifier"
+      ],
+      "profile_membership_basis": "existing profile family and configured project routing",
+      "existing_authorized_maintainers": [],
+      "proposed_maintenance_owner": "default",
+      "proposed_maintainers": [
+        "default"
+      ],
+      "maintainer_authorization_status": "requires explicit wiki_projects configuration; no secondary maintainer inferred",
+      "memory_workdir": "/Users/raelldottin/.hermes/byterover-projects/tunory",
+      "knowledge_tree": "/Users/raelldottin/.hermes/byterover-projects/tunory/.brv/context-tree",
+      "knowledge_tree_exists": true,
+      "existing_curation_timeout_seconds": 360,
+      "existing_plugin_curation_timeout_seconds": null,
+      "wiki_rules": "/Users/raelldottin/Documents/Personal/tunory/.swarm/SWARM_WIKI.md",
+      "wiki_output": "/Users/raelldottin/Documents/Personal/tunory/.swarm/wiki",
+      "wiki_installed": false,
+      "task_workspace_root": "/Users/raelldottin/.hermes/kanban/boards/tunory/workspaces",
+      "task_workspace_root_exists": true,
+      "task_source": "/Users/raelldottin/.hermes/kanban/boards/tunory/kanban.db",
+      "task_project_field": "project_id",
+      "task_project_id_distribution": [
+        {
+          "value": null,
+          "count": 21
+        }
+      ],
+      "task_workspace_kind_distribution": {
+        "scratch": 21
+      },
+      "task_count": 21,
+      "notes": [
+        "Historical archived task assignee tunory-auditor has no current profile configuration; do not add authorization from that row."
+      ]
+    }
+  ],
+  "gaps": [
+    "Seven board/wiki bindings need explicit installation and authorization.",
+    "Home-lab and opnory-iac share the existing Opnory knowledge tree; each requires its own board/workspace/output binding.",
+    "Non-HSP curation timeouts are 360 seconds, with no explicit swarm plugin curation timeout.",
+    "Do not claim task project_id equality checks are already enforced.",
+    "Historical project IDs, external workspace paths and absent profiles do not establish deployment authorization."
+  ],
+  "ownership_clarification_required": false,
+  "ownership_resolution": "User authorized all existing fleet configuration. Explicitly configure proposed default maintenance ownership without attributing historical activity or inferring secondary maintainer authority."
+}
