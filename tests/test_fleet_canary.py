@@ -10,6 +10,19 @@ import pytest
 from test_swarm_protocol import swarm_env
 
 
+@pytest.mark.parametrize("status,runs", [("queued", []), ("running", [object()]), ("blocked", [object()])])
+def test_canary_rejects_runnable_or_dispatched_creation(status, runs):
+    with pytest.raises(RuntimeError):
+        canary.creation_observation(SimpleNamespace(status=status), runs)
+
+
+def test_canary_observes_blocked_creation_and_honest_completed_reuse():
+    new = canary.creation_observation(SimpleNamespace(status="blocked"), [])
+    assert new["observed_blocked_no_runs"] and not new["reused_completed"]
+    reused = canary.creation_observation(SimpleNamespace(status="done"), [object()])
+    assert reused["reused_completed"] and not reused["observed_blocked_no_runs"]
+
+
 def test_completion_reads_public_task_dataclass(swarm_env):
     from hermes_cli import kanban_db as kb, kanban_db_connect as kbc
 
@@ -22,6 +35,20 @@ def test_completion_reads_public_task_dataclass(swarm_env):
         assert kb.get_task(conn, swarm_env["source_tid"]).status == "done"
     finally:
         conn.close()
+
+
+def test_real_hermes_rejection_envelope_remains_an_explicit_denial(swarm_env):
+    result = canary.sanitized_tool_reply(swarm_env["mod"]._reject("private diagnostic"))
+    assert result == {"ok": False, "error_reported": True}
+    assert canary.require_reply({"reply": result}, accepted=False) == result
+    assert "private diagnostic" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("reply", [{}, {"error": ""}, {"error": {}}, {"ok": True, "error": "conflict"}])
+def test_ambiguous_response_cannot_prove_rejection(reply):
+    with pytest.raises(RuntimeError):
+        sanitized = canary.sanitized_tool_reply(reply)
+        canary.require_reply({"reply": sanitized}, accepted=False)
 
 SPEC = importlib.util.spec_from_file_location("fleet_canary", Path(__file__).parents[1] / "ops/fleet_canary.py")
 canary = importlib.util.module_from_spec(SPEC)
@@ -213,3 +240,12 @@ def test_denials_require_zero_changes_on_intended_and_foreign_boards_and_raw(tmp
         return rejected()
     with pytest.raises(RuntimeError, match="denied operation changed"):
         canary.rejected_without_changes(bad_raw_rejection, inventory)
+@pytest.mark.parametrize("reply", [
+    {"error": "denied", "ok": 1},
+    {"error": "denied", "ok": "true"},
+    {"error": "denied", "evidence": {}},
+    {"error": "denied", "event_id": "event"},
+])
+def test_mixed_rejection_envelopes_are_ambiguous(reply):
+    with pytest.raises(RuntimeError):
+        canary.sanitized_tool_reply(reply)

@@ -232,6 +232,33 @@ def fresh_evidence_check(fixture, source, raw, reference):
         raise RuntimeError("capture hash mismatch")
 
 
+def sanitized_tool_reply(result):
+    reply = json.loads(result) if isinstance(result, str) else result
+    if not isinstance(reply, dict):
+        raise RuntimeError("unstructured tool response")
+    fields = ("ok", "event_id", "payload_digest", "comment_id", "recorded_on", "duplicate", "evidence")
+    safe = {key: reply[key] for key in fields if key in reply}
+    if "error" in reply:
+        if not isinstance(reply["error"], str) or not reply["error"].strip() or ("ok" in reply and reply["ok"] is not False):
+            raise RuntimeError("ambiguous tool rejection")
+        if any(key in reply for key in fields if key != "ok"):
+            raise RuntimeError("mixed success and rejection fields")
+        return {"ok": False, "error_reported": True}
+    return safe
+
+
+def creation_observation(task, runs):
+    state = {"status": task.status, "run_count": len(runs), "observed_blocked_no_runs": False,
+             "reused_completed": False}
+    if task.status == "blocked" and not runs:
+        state["observed_blocked_no_runs"] = True
+    elif task.status == "done":
+        state["reused_completed"] = True
+    else:
+        raise RuntimeError("canary task is runnable or dispatched before publication")
+    return state
+
+
 def actor_action(options, payload):
     from tools.registry import registry  # runtime_probe already performed public discovery
     action = payload["action"]
@@ -243,7 +270,8 @@ def actor_action(options, payload):
                 tid = kb.create_task(conn, title=payload["title"], created_by="default", assignee="default",
                                      workspace_kind="dir", workspace_path=payload["workspace"],
                                      initial_status="blocked", idempotency_key=payload["key"], board=payload["board"])
-                return {"ok": True, "task_id": tid}
+                return {"ok": True, "task_id": tid,
+                        "creation_observation": creation_observation(kb.get_task(conn, tid), kb.list_runs(conn, tid))}
             kb.complete_task(conn, payload["task_id"], summary="Immutable release and fleet publication canary passed; no model calls.", fire_lifecycle_hook=False)
             return {"ok": kb.get_task(conn, payload["task_id"]).status == "done"}
         finally:
@@ -261,10 +289,8 @@ def actor_action(options, payload):
         result = registry.get_entry("swarm_publish").handler(args)
     else:
         result = registry.get_entry(payload["tool"]).handler(payload["args"])
-    reply = json.loads(result) if isinstance(result, str) else result
-    # Plugin error strings and other runtime diagnostics stay outside the report.
-    fields = ("ok", "event_id", "payload_digest", "comment_id", "recorded_on", "duplicate", "evidence")
-    return {"ok": True, "reply": {key: reply[key] for key in fields if key in reply}}
+    # Preserve the standard Hermes error envelope without exposing its text.
+    return {"ok": True, "reply": sanitized_tool_reply(result)}
 
 
 def require_reply(result, *, duplicate=None, accepted=True):
@@ -330,6 +356,7 @@ def board_canary(options, inventory):
     return {"ok": True, "executed": True, "plan": plan, "task_id": tid, "capture": capture,
             "claim": claim, "verification": verified, "verifier": verifier,
             "denied_outsider": outsider, "wrong_board_denied": True, "omitted_board_routes_configured": True,
+            "creation_observation": creation["creation_observation"],
             "negative_checks": {"wrong_board": wrong_board_proof, "outsider": outsider_proof},
             "retries_duplicate": True, "preexisting_rows_preserved": counts,
             "historical_findings_claim": "No historical findings adopted or independently verified by this canary."}
