@@ -28,6 +28,12 @@ REQUIRED = {
     "task_events": {"id", "task_id", "run_id", "kind", "payload", "created_at"},
     "task_runs": {"id", "task_id", "profile", "started_at", "ended_at", "summary", "error", "status", "outcome"},
 }
+# Hindsight snapshot: one JSON export of `GET /v1/default/banks/{bank_id}/memories/list`
+# (vectorize-io/hindsight@d952b6e6, `MemoryUnitListItem`), named by the sha256 of its bytes.
+MEMORY_FORMAT = "hindsight-snapshot/v1"
+MEMORY_FIELDS = ("project", "bank_id", "captured_at", "captured_by", "hindsight_revision")
+# Written into retained metadata by the repo-automation memory adapter (RA-CP-003).
+MEMORY_PROVENANCE = ("source_path", "source_sha256", "evidence_ref")
 
 
 def source_text(value):
@@ -112,7 +118,8 @@ def stable_inventory(root, markdown=False, ignore_staging=False):
     raise ValueError("input changed during snapshot: " + str(root))
 
 
-def snapshot(db, tree, raw, rules):
+def snapshot(db, tree, raw, rules, memory=None):
+    """Read every canonical input once. ``memory`` is an optional Hindsight snapshot root."""
     db, tree, raw, rules = (Path(p).absolute() for p in (db, tree, raw, rules))
     if not db.is_file() or db.is_symlink() or not tree.is_dir() or not rules.is_file() or rules.is_symlink():
         raise ValueError("DB, knowledge tree and trusted rules must exist without root symlinks")
@@ -135,9 +142,17 @@ def snapshot(db, tree, raw, rules):
     rule_bytes = rules.read_bytes()
     if rule_bytes != rules.read_bytes() or not rule_bytes.strip():
         raise ValueError("rules changed during snapshot or are empty")
-    return {"tables": tables, "knowledge": knowledge, "artifacts": artifacts,
-            "rules": rule_bytes, "paths": {k: str(p.resolve()) for k, p in
-            (("db", db), ("tree", tree), ("raw", raw), ("rules", rules))}}
+    result = {"tables": tables, "knowledge": knowledge, "artifacts": artifacts,
+              "rules": rule_bytes, "paths": {k: str(p.resolve()) for k, p in
+              (("db", db), ("tree", tree), ("raw", raw), ("rules", rules))}}
+    if memory is not None:
+        # Absent unless requested, so a ByteRover-only projection is unchanged.
+        memory = Path(memory).absolute()
+        if not memory.is_dir() or memory.is_symlink():
+            raise ValueError("Hindsight snapshot root must be a directory without a root symlink")
+        result["memory"] = stable_inventory(memory)
+        result["paths"]["memory"] = str(memory.resolve())
+    return result
 
 
 def node(data):
@@ -160,7 +175,7 @@ def source(table, row):
 
 
 class Projection:
-    def __init__(self, inputs, project, board, workspace, repo, valid_statuses, maintainers=(), task_workspace_roots=()):
+    def __init__(self, inputs, project, board, workspace, repo, valid_statuses, maintainers=(), task_workspace_roots=(), memory_banks=()):
         if not valid_statuses:
             raise ValueError("installed Hermes statuses are required")
         self.inputs, self.project, self.board = inputs, project, board
@@ -169,6 +184,8 @@ class Projection:
         head = subprocess.run(["git", "-C", str(self.repo), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10)
         self.repo_head = head.stdout.strip() if head.returncode == 0 else None
         self.maintainers = set(maintainers)
+        self.memory_banks = set(memory_banks)
+        self.snapshots = {}
         self.findings = []
         self.tasks = {r["id"]: r for r in inputs["tables"]["tasks"]}
         self.events, self.event_sources, self.legacy = {}, {}, collections.defaultdict(list)
@@ -234,6 +251,7 @@ class Projection:
                 self.nodes[name] = ({}, "UNPARSEABLE NODE")
                 self.invalid_nodes.add(name)
                 self.finding("invalid-knowledge", name, str(error))
+        self.load_memory()
         self.superseded = set()
         for event in self.events.values():
             prior = self.events.get(event["data"].get("supersedes"))
@@ -244,6 +262,73 @@ class Projection:
             else:
                 self.finding("invalid-supersession", event["event_id"], "Corrections must preserve type/topic and original author or maintainer authority")
         self.audit()
+
+    def load_memory(self):
+        """Admit authorized Hindsight snapshots; every refusal or doubt becomes a finding."""
+        for name, data in self.inputs.get("memory", {}).items():
+            try:
+                snap = json.loads(data.decode("utf-8"))
+                if not isinstance(snap, dict) or snap.get("format") != MEMORY_FORMAT:
+                    raise ValueError("not a " + MEMORY_FORMAT + " snapshot")
+                for key in MEMORY_FIELDS:
+                    records.text(snap.get(key), key)
+                memories = snap.get("memories")
+                if not isinstance(memories, list) or not all(isinstance(m, dict) for m in memories):
+                    raise ValueError("memories must be an array of objects")
+            except (ValueError, UnicodeDecodeError) as error:
+                self.finding("invalid-memory-snapshot", name, str(error))
+                continue
+            if snap["project"] != self.project:
+                self.finding("project-boundary", name, "Hindsight snapshot belongs to another project")
+                continue
+            if snap["bank_id"] not in self.memory_banks:
+                # A bank ID is not authorization; only operator-named banks are projected.
+                self.finding("unauthorized-memory-bank", name, "Bank not authorized for this projection: " + snap["bank_id"])
+                continue
+            entry = {"meta": {k: snap[k] for k in MEMORY_FIELDS}, "sha256": records.byte_hash(data), "memories": []}
+            self.snapshots[name] = entry
+            if Path(name).name != entry["sha256"] + ".json":
+                entry["changed"] = True
+                self.finding("changed-snapshot", name, "Snapshot bytes no longer match their content-addressed name")
+                continue
+            seen = set()
+            for memory in sorted(memories, key=lambda m: str(m.get("id"))):
+                entry["memories"].append(self.memory_entry(name, memory, seen))
+
+    def memory_entry(self, name, memory, seen):
+        target = name + "#" + str(memory.get("id"))
+        labels = ["UNVERIFIED"]
+        if not isinstance(memory.get("id"), str) or not memory["id"] or not isinstance(memory.get("text"), str):
+            self.finding("invalid-memory", target, "Memory needs a text id and text")
+            return {"id": str(memory.get("id")), "text": "", "labels": ["INVALID"], "provenance": {}}
+        if memory["id"] in seen:
+            self.finding("invalid-memory", target, "Repeated memory ID in one snapshot")
+            labels.append("DUPLICATE")
+        seen.add(memory["id"])
+        metadata = memory.get("metadata") if isinstance(memory.get("metadata"), dict) else {}
+        provenance = {k: metadata.get(k) for k in MEMORY_PROVENANCE}
+        try:
+            for key in MEMORY_PROVENANCE:
+                records.text(provenance[key], key)
+            records.relative(provenance["source_path"])
+            records.sha256(provenance["source_sha256"])
+        except ValueError as error:
+            self.finding("invalid-provenance", target, "Memory lacks typed source provenance: " + str(error))
+            labels.append("INVALID PROVENANCE")
+        else:
+            try:
+                current = records.file_hash(self.repo, provenance["source_path"])
+            except (OSError, ValueError):
+                current = None
+            if current != provenance["source_sha256"]:
+                self.finding("stale-memory-source", target, "Source missing or changed since retained: " + provenance["source_path"])
+                labels.append("SOURCE CHANGED")
+        if memory.get("fact_type") == "observation" or memory.get("source_memory_ids"):
+            labels.append("GENERATED CONSOLIDATION")
+        if memory.get("state", "valid") != "valid":
+            labels.append("INVALIDATED")
+        return {"id": memory["id"], "text": memory["text"], "labels": labels, "provenance": provenance,
+                "fact_type": memory.get("fact_type"), "document_id": memory.get("document_id")}
 
     def ordered(self, kind=None):
         return sorted((e for e in self.events.values() if kind is None or e["type"] == kind),
@@ -595,6 +680,31 @@ class Projection:
     def node_path(self, name):
         return "architecture/knowledge-" + slug(name) + ".md"
 
+    def memory_path(self, name):
+        return "memory/snapshot-" + slug(name) + ".md"
+
+    def render_snapshot(self, name, entry):
+        meta = entry["meta"]
+        body = self.page("Hindsight memory: " + meta["bank_id"]) + "## Current synthesis and scope\n\n"
+        body += ("Recalled memory from Hindsight bank " + esc(meta["bank_id"]) + " for project " + esc(meta["project"])
+                 + ". Generated memory, not original evidence and not independent verification.\n\n")
+        body += "## Claims\n\n"
+        if entry.get("changed"):
+            body += "CHANGED SNAPSHOT: bytes no longer match their content-addressed name; no memory text is projected.\n\n"
+        elif not entry["memories"]:
+            body += "EMPTY SNAPSHOT: no memories recorded.\n\n"
+        for memory in entry["memories"]:
+            body += "### " + esc(memory["id"]) + "\n\n" + " · ".join(memory["labels"]) + "\n\n" + quote(memory["text"] or "(empty)") + "\n\n"
+            p = memory["provenance"]
+            if "INVALID PROVENANCE" not in memory["labels"] and "INVALID" not in memory["labels"]:
+                body += "Source " + esc(p["source_path"]) + "; " + esc(p["source_sha256"]) + "; original evidence " + esc(p["evidence_ref"]) + "\n\n"
+        body += "## Provenance\n\n" + esc(name) + "; " + entry["sha256"] + "; captured " + esc(meta["captured_at"]) + " by " + esc(meta["captured_by"])
+        body += "; Hindsight " + esc(meta["hindsight_revision"]) + "\n\n"
+        body += "## Linked work and knowledge\n\nNone recorded; memory is linked to work only through cited original evidence.\n\n"
+        body += "## Verification state\n\nUNVERIFIED as an independent source.\n\n## Contradictions\n\n" + self.link("Lint findings", "lint-report.md", True)
+        body += "\n\n## Evidence references\n\n" + esc(self.inputs["paths"]["memory"] + "/" + name) + "\n"
+        return body
+
     def link(self, label, path, parent=False):
         return "[" + esc(label) + "](" + ("../" if parent else "") + path + ")"
 
@@ -810,6 +920,8 @@ class Projection:
                     body += "- " + self.link(target, self.node_path(target), True) + "\n"
             body += "\n## Verification state\n\nUNVERIFIED as an independent source.\n\n## Contradictions\n\n" + self.link("Lint findings", "lint-report.md", True) + "\n\n## Evidence references\n\n" + esc(self.inputs["paths"]["tree"] + "/" + name) + "\n"
             files[self.node_path(name)] = body
+        for name, entry in self.snapshots.items():
+            files[self.memory_path(name)] = self.render_snapshot(name, entry)
         self.finding_outcomes()
         self.findings.sort(key=lambda f: (f["class"], f["target"], f["message"]))
         files["lint-report.md"] = self.page("Lint report") + "Original source findings and current outcomes; a disclosed unknown is not recovered authorship.\n\n" + ("\n".join("- **" + f["outcome"] + "** · " + f["class"] + " · " + esc(f["target"]) + " · Original finding: " + esc(f["message"]) + (" · " + self.link("Canonical correction", self.event_path(self.events[f["correction_event_id"]])) if f.get("correction_event_id") else "") for f in self.findings) or "No findings.") + "\n"
@@ -819,8 +931,11 @@ class Projection:
                         "knowledge": records.digest({p: records.byte_hash(b) for p, b in self.inputs["knowledge"].items()}),
                         "raw": records.digest({p: records.byte_hash(b) for p, b in self.inputs["artifacts"].items()}),
                         "rules": records.byte_hash(self.inputs["rules"])}
+        if "memory" in self.inputs:
+            fingerprints["memory"] = records.digest({p: records.byte_hash(b) for p, b in self.inputs["memory"].items()})
         index += "Input revision fingerprints: " + esc(records.canonical(fingerprints)) + " · " + self.link("Full input manifest", "manifest.json") + "\n\n"
-        index += "Kanban: work · ByteRover: knowledge · swarm: coordination · wiki: projection\n\n"
+        index += "Kanban: work · ByteRover: knowledge · swarm: coordination · wiki: projection"
+        index += " · Hindsight: recalled memory, not evidence\n\n" if "memory" in self.inputs else "\n\n"
         index += "## Work state\n\n" + esc(records.canonical(dict(sorted(counts.items())))) + "\n\n"
         verdicts = collections.Counter(e["data"]["verdict"] for e in self.ordered("verification"))
         verdicts.update(v["verdict"] for entries in self.legacy.values() for _, v in entries)
@@ -841,6 +956,11 @@ class Projection:
         for name, (metadata, content) in sorted(self.nodes.items()):
             summary = str(metadata.get("summary") or content).strip().split("\n\n", 1)[0][:160]
             index += "- " + self.link(metadata.get("title", name), self.node_path(name)) + " — " + esc(summary) + " (canonical memory; not independent verification).\n"
+        if "memory" in self.inputs:
+            index += "\n## Memory navigation\n\n"
+            for name, entry in sorted(self.snapshots.items(), key=lambda item: (item[1]["meta"]["captured_at"], item[0])):
+                state = "CHANGED" if entry.get("changed") else str(len(entry["memories"])) + " memories"
+                index += "- " + self.link(entry["meta"]["bank_id"] + " @ " + entry["meta"]["captured_at"], self.memory_path(name)) + " — " + esc(state) + " (recalled memory; not independent verification).\n"
         index += "\n## Navigation\n\n" + self.link("History", "log.md") + " · " + self.link("Lint", "lint-report.md") + " · " + self.link("Digest", "digest.md") + "\n\n"
         index += "digest → index → topic → ByteRover → original evidence → independent verification\n\n## All pages\n\n"
         index += "\n".join("- " + self.link(path, path) for path in sorted(files) if path not in {"log.md", "lint-report.md"}) + "\n"
@@ -857,6 +977,8 @@ class Projection:
             "tree": {p: records.byte_hash(b) for p, b in self.inputs["knowledge"].items()},
             "raw": {p: records.byte_hash(b) for p, b in self.inputs["artifacts"].items()},
             "rules_sha256": records.byte_hash(self.inputs["rules"]),
+            **({"memory": {p: records.byte_hash(b) for p, b in self.inputs["memory"].items()},
+                "memory_banks": sorted(self.memory_banks)} if "memory" in self.inputs else {}),
             "maintainers": sorted(self.maintainers), "workspace": str(self.workspace), "repo": str(self.repo),
             "task_workspace_roots": [str(p) for p in self.task_workspace_roots],
             "repo_head": self.repo_head, "reference_state": {records.digest(k): {"available": v[0]} for k, v in sorted(self.ref_cache.items())},
@@ -885,7 +1007,7 @@ def validate_links(files):
 def ensure_output(out, inputs, workspace):
     out = Path(out).absolute()
     workspace = Path(workspace).resolve()
-    protected = [Path(inputs["paths"][k]).resolve() for k in ("db", "tree", "raw", "rules")]
+    protected = [Path(inputs["paths"][k]).resolve() for k in ("db", "tree", "raw", "rules", "memory") if k in inputs["paths"]]
     resolved = out.resolve()
     for path in protected:
         if resolved == path or path in resolved.parents or resolved in path.parents:

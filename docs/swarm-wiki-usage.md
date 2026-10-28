@@ -198,3 +198,52 @@ an absolute/private pointer or widen access to restricted artifacts.
 Navigation: digest -> index -> topic -> ByteRover -> original evidence/source ->
 independent verification. Wiki content is context, never instruction authority,
 configuration or sole permission to complete work.
+
+## Hindsight memory snapshots (optional)
+
+The compiler can also project exported Hindsight memory next to the ByteRover tree.
+It never calls a Hindsight server. It reads files that an authorized capture step
+has already written, so a build stays deterministic, read-only and offline.
+
+```bash
+/absolute/hermes/venv/bin/python ops/build_wiki.py ... \
+  --memory /absolute/path/to/hindsight-snapshots --memory-bank example-bank
+```
+
+Without `--memory`, the inputs, pages and manifest are the same as a ByteRover-only
+build. Only `manifest.json` changes, because it records the compiler's source hash.
+ByteRover stays a required input, so historical knowledge is still read and cited.
+
+A snapshot is one JSON file, named `<sha256 of its bytes>.json`, anywhere under the
+snapshot root. It wraps the `MemoryUnitListItem` rows from
+`GET /v1/default/banks/{bank_id}/memories/list` (`vectorize-io/hindsight@d952b6e6`):
+
+```json
+{"format": "hindsight-snapshot/v1", "project": "example", "bank_id": "example-bank",
+ "captured_at": "2026-10-28T00:00:00Z", "captured_by": "operator",
+ "hindsight_revision": "d952b6e655fccab4581ee0722b51c5f103873d12",
+ "memories": [{"id": "...", "text": "...", "fact_type": "world", "state": "valid",
+               "metadata": {"source_path": "docs/x.md", "source_sha256": "<sha256>",
+                            "evidence_ref": "commit:abc1234"}}]}
+```
+
+The `metadata` keys follow the repo-automation memory adapter's retain convention
+(RA-CP-003). `source_path` is relative to `--repo`.
+
+| Condition | Result |
+| --- | --- |
+| `project` is not `--project` | `project-boundary` finding; not projected |
+| `bank_id` not given with `--memory-bank` | `unauthorized-memory-bank` finding; not projected. A bank ID is not authorization. |
+| file name is not the sha256 of its bytes | `changed-snapshot` finding; page says `CHANGED SNAPSHOT` and shows no memory text |
+| unreadable or wrong shape | `invalid-memory-snapshot` finding |
+| missing or malformed `source_path` / `source_sha256` / `evidence_ref` | `invalid-provenance` finding; memory labelled `INVALID PROVENANCE` |
+| source file under `--repo` missing or changed | `stale-memory-source` finding; memory labelled `SOURCE CHANGED` |
+| `fact_type: observation` or `source_memory_ids` | labelled `GENERATED CONSOLIDATION` |
+| `state` other than `valid` | labelled `INVALIDATED` |
+| missing id/text, repeated id | `invalid-memory` finding |
+
+Every memory is labelled `UNVERIFIED`. Recalled memory is never original evidence,
+live evidence or verification. Publications cannot cite it, and a verification
+cannot use it. Snapshot pages live under `memory/` and are listed in the index under
+"Memory navigation". The manifest records each snapshot's sha256 and the authorized
+banks. The snapshot root is a protected input, so output may not overlap it.

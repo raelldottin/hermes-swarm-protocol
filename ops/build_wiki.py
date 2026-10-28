@@ -27,6 +27,10 @@ def main(argv=None):
     parser.add_argument("--repo", type=Path)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--maintainer", action="append", default=[])
+    parser.add_argument("--memory", type=Path,
+                        help="Optional Hindsight snapshot root; omitted means a ByteRover-only projection")
+    parser.add_argument("--memory-bank", action="append", default=[],
+                        help="Hindsight bank authorized for this project; repeat for multiple banks")
     parser.add_argument("--task-workspace-root", type=Path, action="append", default=[],
                         help="Additional authorized task workspace root; repeat for multiple roots")
     parser.add_argument("--hermes-source", type=Path, default=Path.home() / ".hermes/hermes-agent")
@@ -45,9 +49,10 @@ def main(argv=None):
         out = args.out or args.workspace / ".swarm/wiki"
         sys.path.insert(0, str(args.hermes_source))
         from hermes_cli.kanban_db import VALID_STATUSES
-        inputs = wiki.snapshot(db, tree, raw, rules)
+        inputs = wiki.snapshot(db, tree, raw, rules, args.memory)
         projection = wiki.Projection(inputs, args.project, args.board, args.workspace,
-                                     args.repo or args.workspace, VALID_STATUSES, args.maintainer, args.task_workspace_root)
+                                     args.repo or args.workspace, VALID_STATUSES, args.maintainer, args.task_workspace_root,
+                                     args.memory_bank)
         files = projection.render()
         matched = wiki.publish(out, files, inputs, args.workspace, args.check)
         print(json.dumps({"output": str(out.absolute()), "pages": len(files), "findings": len(projection.findings),
