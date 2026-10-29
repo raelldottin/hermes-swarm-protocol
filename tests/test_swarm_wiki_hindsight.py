@@ -23,10 +23,10 @@ def memory(mid, text="Issuer lookup is tenant scoped", source=SOURCE, sha=None, 
     return {"id": mid, "text": text, "fact_type": "world", "metadata": metadata, "state": "valid", **extra}
 
 
-def snapshot_doc(memories, project_name="p", bank="p-bank", captured_at="2026-10-28T00:00:00Z"):
+def snapshot_doc(memories, project_name="p", bank="p-bank", captured_at="2026-10-28T00:00:00Z", total=None):
     return {"format": wiki.MEMORY_FORMAT, "project": project_name, "bank_id": bank, "captured_at": captured_at,
             "captured_by": "operator", "hindsight_revision": "d952b6e655fccab4581ee0722b51c5f103873d12",
-            "memories": memories}
+            "memories": memories, "total": len(memories) if total is None else total}
 
 
 def write_snapshot(root, doc):
@@ -231,3 +231,29 @@ def test_cli_requires_explicit_bank_authorization(memory_project, tmp_path):
     assert "unauthorized-memory-bank" in refused.stderr
     assert "unauthorized-memory-bank" not in allowed.stderr
     assert json.loads(allowed.stdout)["pages"] > json.loads(refused.stdout)["pages"]
+
+
+def test_partial_snapshot_is_visible_as_incomplete(memory_project):
+    path = write_snapshot(memory_project["memory"], snapshot_doc([memory("m1", sha=memory_project["sha"])], total=150))
+
+    projection, files, _ = build(memory_project)
+
+    assert ("incomplete-memory-snapshot", path.name) in findings(projection)
+    assert "INCOMPLETE SNAPSHOT: 1 of 150 memories" in page(files, path.name)
+    assert "Issuer lookup is tenant scoped" in page(files, path.name)
+    assert b"1 of 150 memories, INCOMPLETE" in files["index.md"]
+
+
+@pytest.mark.parametrize("total", [None, -1, True, "1", 1.0])
+def test_snapshot_without_an_integer_total_is_refused(memory_project, total):
+    doc = snapshot_doc([memory("m1", sha=memory_project["sha"])])
+    if total is None:
+        del doc["total"]
+    else:
+        doc["total"] = total
+    write_snapshot(memory_project["memory"], doc)
+
+    projection, files, _ = build(memory_project)
+
+    assert "invalid-memory-snapshot" in {f["class"] for f in projection.findings}
+    assert not any(name.startswith("memory/") for name in files)
