@@ -275,6 +275,11 @@ class Projection:
                 memories = snap.get("memories")
                 if not isinstance(memories, list) or not all(isinstance(m, dict) for m in memories):
                     raise ValueError("memories must be an array of objects")
+                # The list endpoint pages (limit 100 by default); without its total a first page
+                # is indistinguishable from a whole bank.
+                total = snap.get("total")
+                if type(total) is not int or total < 0:
+                    raise ValueError("total must be the list response's non-negative integer total")
             except (ValueError, UnicodeDecodeError) as error:
                 self.finding("invalid-memory-snapshot", name, str(error))
                 continue
@@ -285,12 +290,17 @@ class Projection:
                 # A bank ID is not authorization; only operator-named banks are projected.
                 self.finding("unauthorized-memory-bank", name, "Bank not authorized for this projection: " + snap["bank_id"])
                 continue
-            entry = {"meta": {k: snap[k] for k in MEMORY_FIELDS}, "sha256": records.byte_hash(data), "memories": []}
+            entry = {"meta": {k: snap[k] for k in MEMORY_FIELDS}, "sha256": records.byte_hash(data), "memories": [],
+                     "total": total}
             self.snapshots[name] = entry
             if Path(name).name != entry["sha256"] + ".json":
                 entry["changed"] = True
                 self.finding("changed-snapshot", name, "Snapshot bytes no longer match their content-addressed name")
                 continue
+            if len(memories) != total:
+                entry["incomplete"] = True
+                self.finding("incomplete-memory-snapshot", name,
+                             "Snapshot holds " + str(len(memories)) + " of " + str(total) + " memories in the bank")
             seen = set()
             for memory in sorted(memories, key=lambda m: str(m.get("id"))):
                 entry["memories"].append(self.memory_entry(name, memory, seen))
@@ -693,6 +703,9 @@ class Projection:
             body += "CHANGED SNAPSHOT: bytes no longer match their content-addressed name; no memory text is projected.\n\n"
         elif not entry["memories"]:
             body += "EMPTY SNAPSHOT: no memories recorded.\n\n"
+        if entry.get("incomplete") and not entry.get("changed"):
+            body += ("INCOMPLETE SNAPSHOT: " + str(len(entry["memories"])) + " of " + str(entry["total"])
+                     + " memories; absent memories are unknown, not empty.\n\n")
         for memory in entry["memories"]:
             body += "### " + esc(memory["id"]) + "\n\n" + " · ".join(memory["labels"]) + "\n\n" + quote(memory["text"] or "(empty)") + "\n\n"
             p = memory["provenance"]
@@ -960,6 +973,8 @@ class Projection:
             index += "\n## Memory navigation\n\n"
             for name, entry in sorted(self.snapshots.items(), key=lambda item: (item[1]["meta"]["captured_at"], item[0])):
                 state = "CHANGED" if entry.get("changed") else str(len(entry["memories"])) + " memories"
+                if entry.get("incomplete") and not entry.get("changed"):
+                    state = str(len(entry["memories"])) + " of " + str(entry["total"]) + " memories, INCOMPLETE"
                 index += "- " + self.link(entry["meta"]["bank_id"] + " @ " + entry["meta"]["captured_at"], self.memory_path(name)) + " — " + esc(state) + " (recalled memory; not independent verification).\n"
         index += "\n## Navigation\n\n" + self.link("History", "log.md") + " · " + self.link("Lint", "lint-report.md") + " · " + self.link("Digest", "digest.md") + "\n\n"
         index += "digest → index → topic → ByteRover → original evidence → independent verification\n\n## All pages\n\n"

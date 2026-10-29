@@ -221,11 +221,14 @@ snapshot root. It wraps the `MemoryUnitListItem` rows from
 ```json
 {"format": "hindsight-snapshot/v1", "project": "example", "bank_id": "example-bank",
  "captured_at": "2026-10-28T00:00:00Z", "captured_by": "operator",
- "hindsight_revision": "d952b6e655fccab4581ee0722b51c5f103873d12",
+ "hindsight_revision": "d952b6e655fccab4581ee0722b51c5f103873d12", "total": 1,
  "memories": [{"id": "...", "text": "...", "fact_type": "world", "state": "valid",
                "metadata": {"source_path": "docs/x.md", "source_sha256": "<sha256>",
                             "evidence_ref": "commit:abc1234"}}]}
 ```
+
+`total` is the list response's `total`. The endpoint pages (`limit` 100 by default), so a
+capture must page until it holds every row, unfiltered, and record that total.
 
 The `metadata` keys follow the repo-automation memory adapter's retain convention
 (RA-CP-003). `source_path` is relative to `--repo`.
@@ -235,7 +238,8 @@ The `metadata` keys follow the repo-automation memory adapter's retain conventio
 | `project` is not `--project` | `project-boundary` finding; not projected |
 | `bank_id` not given with `--memory-bank` | `unauthorized-memory-bank` finding; not projected. A bank ID is not authorization. |
 | file name is not the sha256 of its bytes | `changed-snapshot` finding; page says `CHANGED SNAPSHOT` and shows no memory text |
-| unreadable or wrong shape | `invalid-memory-snapshot` finding |
+| unreadable or wrong shape, or `total` is not a non-negative integer | `invalid-memory-snapshot` finding |
+| fewer or more memories than `total` | `incomplete-memory-snapshot` finding; page says `INCOMPLETE SNAPSHOT: n of total` and the index marks it `INCOMPLETE` |
 | missing or malformed `source_path` / `source_sha256` / `evidence_ref` | `invalid-provenance` finding; memory labelled `INVALID PROVENANCE` |
 | source file under `--repo` missing or changed | `stale-memory-source` finding; memory labelled `SOURCE CHANGED` |
 | `fact_type: observation` or `source_memory_ids` | labelled `GENERATED CONSOLIDATION` |
