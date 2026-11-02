@@ -161,3 +161,17 @@ See [operations and payloads](docs/swarm-wiki-usage.md),
 Run tests with the installed Hermes virtualenv, this checkout's plugin path and
 inherited Kanban routing pins removed, as shown in the design contract. Generated
 wiki output is not proof that its underlying claims have passed verification.
+
+## License
+
+hermes-swarm-protocol is free software under the GNU General Public License,
+version 2 only (`GPL-2.0-only`). The full text is in [`COPYING`](COPYING). It comes
+with ABSOLUTELY NO WARRANTY, as `COPYING` explains.
+
+Copyright (C) 2026 Raell Dottin.
+
+The license covers the original code and documentation in this repository. Every
+fleet release is a checkout of one commit, so `COPYING` ships with each deployed
+plugin. Hermes Agent and PyYAML, which the plugin imports at runtime, and the
+ByteRover and Hindsight programs it reads from, keep their own licenses and are not
+part of this repository.
