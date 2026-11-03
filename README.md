@@ -5,6 +5,9 @@ See the [fleet rollout results](docs/swarm-wiki-fleet-rollout.md) and
 [acceptance receipts](docs/swarm-wiki-fleet-acceptance.json) for the tested
 immutable release, live canaries and retained historical source findings.
 
+For the current feature baseline, proposed milestones, acceptance criteria and
+release strategy, see the [full product roadmap](ROADMAP.md).
+
 Swarm coordination semantics for [Hermes Agent](https://hermes-agent.nousresearch.com/)
 fleets: a thin protocol layer over Hermes Kanban (work state) and ByteRover (shared
 project knowledge), with a generated Swarm Wiki for readable knowledge and audit.
